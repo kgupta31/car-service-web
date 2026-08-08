@@ -14,8 +14,9 @@
  */
 
 import OpenAI from "openai";
-import { TOOL_SCHEMAS, runTool } from "./tools";
-import type { Findings, AgentEvent } from "./types";
+import { TOOL_SCHEMAS, runTool, computeScheduleItemStatus } from "./tools";
+import type { ScheduleResult } from "./tools";
+import type { Findings, FindingsItem, AgentEvent } from "./types";
 
 export type { Findings, AgentEvent } from "./types";
 
@@ -114,6 +115,44 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey, baseURL: GROQ_BASE_URL });
 }
 
+function normalizeServiceName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+// Safety net: the system prompt instructs the model to return a status for
+// every item in the manufacturer schedule, but nothing enforces that. Fill
+// in anything it dropped so the UI always shows the complete schedule.
+function fillMissingScheduleItems(
+  findings: Findings,
+  schedule: ScheduleResult | null,
+  mileage: number
+): Findings {
+  if (!schedule || schedule.schedule.length === 0) return findings;
+  if (!Number.isFinite(mileage)) return findings;
+
+  const existing = findings.items.map((it) => normalizeServiceName(it.service));
+  const consumed = new Set<number>();
+
+  const missing = schedule.schedule.filter((si) => {
+    const n = normalizeServiceName(si.service);
+    const idx = existing.findIndex(
+      (en, i) => !consumed.has(i) && (en.includes(n) || n.includes(en))
+    );
+    if (idx === -1) return true;
+    consumed.add(idx);
+    return false;
+  });
+
+  if (missing.length === 0) return findings;
+
+  const added: FindingsItem[] = missing.map((si) => {
+    const { status, milesInfo } = computeScheduleItemStatus(si.interval_miles, mileage);
+    return { service: si.service, category: si.category, status, milesInfo };
+  });
+
+  return { ...findings, items: [...findings.items, ...added] };
+}
+
 export async function* runAgent(userMessage: string): AsyncGenerator<AgentEvent> {
   const client = getClient();
 
@@ -124,6 +163,7 @@ export async function* runAgent(userMessage: string): AsyncGenerator<AgentEvent>
 
   const tools = [...TOOL_SCHEMAS, PRESENT_FINDINGS_TOOL];
   const MAX_TURNS = 8;
+  let lastSchedule: ScheduleResult | null = null;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let response;
@@ -162,13 +202,18 @@ export async function* runAgent(userMessage: string): AsyncGenerator<AgentEvent>
       const args = JSON.parse(tc.function.arguments || "{}");
 
       if (tc.function.name === "present_findings") {
-        yield { type: "final", findings: args as Findings };
+        const findings = fillMissingScheduleItems(args as Findings, lastSchedule, (args as Findings).mileage);
+        yield { type: "final", findings };
         return;
       }
 
       yield { type: "tool_call", name: tc.function.name, input: args };
       const result = await runTool(tc.function.name, args);
       yield { type: "tool_result", name: tc.function.name, result };
+
+      if (tc.function.name === "get_maintenance_schedule") {
+        lastSchedule = result as ScheduleResult;
+      }
 
       messages.push({
         role: "tool",
