@@ -35,7 +35,8 @@ guess at maintenance intervals from memory if a tool can give you real data.
 Given a VIN, the car's current mileage, and (optionally) a list of services a dealership or shop
 has proposed, you must:
 
-1. Call vin_decode to confirm make/model/year.
+1. Call vin_decode to confirm make/model/year — unless the user already told you the
+   year/make/model directly (no VIN given), in which case skip this step.
 2. Call get_maintenance_schedule for that make/model.
 3. For EACH service in the manufacturer schedule, determine status based on current mileage:
    "overdue", "due_now" (within ~1,000 miles of the interval), or "not_due" — using the interval
