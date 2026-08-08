@@ -205,9 +205,9 @@ export default function AgentConsole() {
               Agent reasoning trace
             </div>
             <div className="space-y-1.5">
-              {trace.map((t) => (
+              {trace.map((t, i) => (
                 <motion.div
-                  key={t.id}
+                  key={`${t.id}-${i}`}
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="flex items-start gap-2"
