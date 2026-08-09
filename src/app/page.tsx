@@ -14,7 +14,7 @@ export default function Home() {
         {/* Nav */}
         <header className="max-w-5xl mx-auto px-6 pt-8 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="size-7 rounded-lg bg-gradient-to-br from-accent to-accent-2" />
+            <img src="/logo.svg" alt="" className="size-7" />
             <span className="font-semibold tracking-tight">ServiceAudit Agent</span>
           </div>
           <div className="flex items-center gap-2 text-[11px] text-white/40">

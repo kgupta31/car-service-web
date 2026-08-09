@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
+import { VehicleIcon } from "@/components/VehicleIcon";
 
 type TraceLine = { id: number; label: string };
 
@@ -355,13 +356,6 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
   const { vehicle, mileage, items, quoteVerdicts, summary, exactMatch, scheduleSource } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
 
-  const [imageFailed, setImageFailed] = useState(false);
-  const imageUrl = `https://cdn.imagin.studio/getImage?customer=${
-    process.env.NEXT_PUBLIC_IMAGIN_CUSTOMER_KEY || "hello"
-  }&make=${encodeURIComponent(vehicle.make)}&modelFamily=${encodeURIComponent(
-    vehicle.model
-  )}&modelYear=${encodeURIComponent(vehicle.year)}&angle=01`;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -372,18 +366,7 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
       {/* Vehicle summary */}
       <div className="glass rounded-2xl p-6 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          {!imageFailed ? (
-            <img
-              src={imageUrl}
-              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
-              className="size-12 rounded-xl object-cover shrink-0 bg-white/5"
-              onError={() => setImageFailed(true)}
-            />
-          ) : (
-            <div className="size-12 rounded-xl bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center shrink-0">
-              <Car className="size-6 text-black" />
-            </div>
-          )}
+          <VehicleIcon model={vehicle.model} className="size-12" />
           <div>
             <div className="text-lg font-semibold">
               {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim ? `· ${vehicle.trim}` : ""}
