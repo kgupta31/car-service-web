@@ -309,7 +309,8 @@ export async function* runAgent(
   userMessage: string,
   transcribedItems?: string[],
   amountQuoted?: number,
-  zip?: string
+  zip?: string,
+  cachedSchedule?: ScheduleResult
 ): AsyncGenerator<AgentEvent> {
   const client = getClient();
 
@@ -380,6 +381,16 @@ export async function* runAgent(
           findings.transcribedItems = transcribedItems;
         }
 
+        // Provenance comes from the tool result, not the model, so the UI can be
+        // honest about whether this was a real researched schedule or a fallback.
+        if (lastSchedule) {
+          findings.exactMatch = lastSchedule.exact_match;
+          findings.scheduleSource = lastSchedule.source;
+          if (lastSchedule.sources && lastSchedule.sources.length > 0) {
+            findings.scheduleSources = lastSchedule.sources;
+          }
+        }
+
         if (amountQuoted && amountQuoted > 0) {
           const priceAssessment = await assessPriceReasonableness(
             client,
@@ -398,7 +409,10 @@ export async function* runAgent(
       }
 
       yield { type: "tool_call", name: tc.function.name, input: args };
-      const result = await runTool(tc.function.name, args);
+      // A client-supplied cached schedule skips the (slow) web search entirely.
+      // Cache is keyed per vehicle on the client — see vehicleHistory.ts.
+      const usingCache = tc.function.name === "get_maintenance_schedule" && !!cachedSchedule;
+      const result = usingCache ? cachedSchedule : await runTool(tc.function.name, args);
       yield { type: "tool_result", name: tc.function.name, result };
 
       if (tc.function.name === "get_maintenance_schedule") {

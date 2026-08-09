@@ -30,6 +30,7 @@ export type ScheduleResult = {
   exact_match: boolean;
   source: string;
   schedule: MaintenanceItem[];
+  sources?: string[];
   error?: string;
 };
 
@@ -119,16 +120,113 @@ const GENERIC_SCHEDULE: MaintenanceItem[] = [
   { service: "Coolant replacement", interval_miles: 60000, category: "major" },
 ];
 
-export function getMaintenanceSchedule(make: string, model: string): ScheduleResult {
+// Falls back through: web search -> small hardcoded table -> generic averages.
+// The search is what makes this app's core claim ("your manufacturer's
+// schedule") actually true; the table and generic list only exist so a failed
+// search degrades instead of erroring.
+function fallbackSchedule(make: string, model: string): ScheduleResult {
   const key = `${make.trim().toUpperCase()}|${model.trim().toUpperCase()}`;
   const exact = MOCK_SCHEDULES[key];
   return {
     make,
     model,
     exact_match: !!exact,
-    source: exact ? "mocked internal table" : "generic fallback (not model-specific)",
+    source: exact ? "built-in table" : "generic estimate (not model-specific)",
     schedule: exact ?? GENERIC_SCHEDULE,
   };
+}
+
+export async function getMaintenanceSchedule(
+  make: string,
+  model: string,
+  year?: string
+): Promise<ScheduleResult> {
+  const searched = await searchMaintenanceSchedule(make, model, year);
+  return searched ?? fallbackSchedule(make, model);
+}
+
+// Web-search the manufacturer's published intervals for this exact vehicle.
+// Returns null on any failure so the caller can fall back.
+async function searchMaintenanceSchedule(
+  make: string,
+  model: string,
+  year?: string
+): Promise<ScheduleResult | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+
+  const vehicle = `${year ? `${year} ` : ""}${make} ${model}`.trim();
+
+  try {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "groq/compound-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You research manufacturer-published vehicle maintenance schedules. Use web search " +
+              "to find the real recommended service intervals for the exact vehicle asked about. " +
+              "Respond with ONLY a JSON object, no other text, no markdown fences, matching this " +
+              'exact shape: {"schedule": [{"service": string, "interval_miles": number, ' +
+              '"category": "routine" | "major"}], "sources": string[]}. Use "routine" for items ' +
+              'under 40,000 mile intervals and "major" for longer ones. Include 6-12 items. If you ' +
+              'cannot find a real model-specific schedule, return {"schedule": [], "sources": []}.',
+          },
+          {
+            role: "user",
+            content: `What is the manufacturer-recommended maintenance schedule for a ${vehicle}?`,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data?.choices?.[0]?.message?.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.schedule)) return null;
+
+    const schedule: MaintenanceItem[] = parsed.schedule
+      .filter(
+        (it: unknown): it is { service: string; interval_miles: number; category: string } =>
+          !!it &&
+          typeof (it as { service?: unknown }).service === "string" &&
+          typeof (it as { interval_miles?: unknown }).interval_miles === "number" &&
+          Number.isFinite((it as { interval_miles: number }).interval_miles) &&
+          (it as { interval_miles: number }).interval_miles > 0
+      )
+      .map((it: { service: string; interval_miles: number; category: string }) => ({
+        service: it.service,
+        interval_miles: it.interval_miles,
+        category: it.category === "major" ? ("major" as const) : ("routine" as const),
+      }));
+
+    if (schedule.length === 0) return null;
+
+    const sources = Array.isArray(parsed.sources)
+      ? parsed.sources.filter((s: unknown): s is string => typeof s === "string")
+      : [];
+
+    return {
+      make,
+      model,
+      exact_match: true,
+      source: `${make} manufacturer schedule (researched)`,
+      schedule,
+      sources,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // Deterministic status calc for one schedule item at a given mileage. Used
@@ -196,6 +294,7 @@ export const TOOL_SCHEMAS = [
         properties: {
           make: { type: "string", description: "Vehicle make, e.g. 'Toyota'." },
           model: { type: "string", description: "Vehicle model, e.g. 'Camry'." },
+          year: { type: "string", description: "Model year, e.g. '2022'. Include it when known." },
         },
         required: ["make", "model"],
       },
@@ -209,7 +308,11 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
       return await vinDecode(input.vin as string);
     }
     if (name === "get_maintenance_schedule") {
-      return getMaintenanceSchedule(input.make as string, input.model as string);
+      return await getMaintenanceSchedule(
+        input.make as string,
+        input.model as string,
+        input.year as string | undefined
+      );
     }
     return { error: `Unknown tool: ${name}` };
   } catch (e) {

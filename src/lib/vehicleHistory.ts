@@ -1,4 +1,5 @@
 import type { Findings, QuoteVerdict } from "./types";
+import type { ScheduleResult } from "./tools";
 
 export type AuditRecord = {
   timestamp: number;
@@ -13,7 +14,9 @@ export type VehicleHistory = {
 };
 
 const STORAGE_PREFIX = "serviceaudit:history:";
+const SCHEDULE_PREFIX = "serviceaudit:schedule:";
 const MAX_AUDITS_PER_VEHICLE = 10;
+const SCHEDULE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 // A VIN identifies a vehicle uniquely; without one, year+make+model is the
 // best available proxy (imprecise across owners of the same model, but
@@ -87,4 +90,38 @@ export function summarizeHistoryForPrompt(history: VehicleHistory | null): strin
     return `- ${date} at ${a.mileage.toLocaleString()} miles: ${items}`;
   });
   return lines.join("\n");
+}
+
+type CachedSchedule = { savedAt: number; schedule: ScheduleResult };
+
+// Researching a schedule costs a slow web search, and a given vehicle's
+// schedule doesn't change — so cache it per vehicle and skip the search on
+// repeat audits. Expires after 90 days in case our research improves.
+export function getCachedSchedule(identifier: string | null): ScheduleResult | undefined {
+  if (!identifier || typeof window === "undefined") return undefined;
+  try {
+    const raw = window.localStorage.getItem(`${SCHEDULE_PREFIX}${identifier}`);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as CachedSchedule;
+    if (!parsed?.schedule || !Array.isArray(parsed.schedule.schedule)) return undefined;
+    if (Date.now() - parsed.savedAt > SCHEDULE_TTL_MS) return undefined;
+    return parsed.schedule;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveCachedSchedule(identifier: string | null, schedule: ScheduleResult): void {
+  if (!identifier || typeof window === "undefined") return;
+  // Only cache real researched schedules — caching a generic fallback would
+  // lock the user out of getting a better answer later.
+  if (!schedule?.exact_match || !Array.isArray(schedule.schedule) || schedule.schedule.length === 0) {
+    return;
+  }
+  try {
+    const payload: CachedSchedule = { savedAt: Date.now(), schedule };
+    window.localStorage.setItem(`${SCHEDULE_PREFIX}${identifier}`, JSON.stringify(payload));
+  } catch {
+    // localStorage unavailable or full — caching is an optimization, not core.
+  }
 }

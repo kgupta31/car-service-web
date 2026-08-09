@@ -37,6 +37,7 @@ export type Findings = {
   disputeDraft?: string;
   transcribedItems?: string[];
   priceAssessment?: PriceAssessment;
+  scheduleSources?: string[];
 };
 
 export type AgentEvent =

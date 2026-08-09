@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { runAgent, transcribeQuoteImage } from "@/lib/agent";
+import type { ScheduleResult } from "@/lib/tools";
 import { checkRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
     quoteImage,
     amountQuoted,
     zip,
+    cachedSchedule,
   } = body as {
     mode?: "vin" | "manual";
     vin?: string;
@@ -95,6 +97,7 @@ export async function POST(req: NextRequest) {
     quoteImage?: string;
     amountQuoted?: number;
     zip?: string;
+    cachedSchedule?: ScheduleResult;
   };
 
   const validAmountQuoted =
@@ -102,6 +105,16 @@ export async function POST(req: NextRequest) {
       ? amountQuoted
       : undefined;
   const trimmedZip = typeof zip === "string" ? zip.trim() : "";
+
+  // Client-supplied cache: only trust it if it's shaped correctly. A malformed
+  // cache just means we do the search, never an error.
+  const validCachedSchedule =
+    cachedSchedule &&
+    typeof cachedSchedule === "object" &&
+    Array.isArray(cachedSchedule.schedule) &&
+    cachedSchedule.schedule.length > 0
+      ? cachedSchedule
+      : undefined;
 
   if (quoteImage) {
     if (typeof quoteImage !== "string" || !/^data:image\/(png|jpe?g|webp);base64,/.test(quoteImage)) {
@@ -183,7 +196,13 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       };
       try {
-        for await (const event of runAgent(userMessage, transcribedItems, validAmountQuoted, trimmedZip)) {
+        for await (const event of runAgent(
+          userMessage,
+          transcribedItems,
+          validAmountQuoted,
+          trimmedZip,
+          validCachedSchedule
+        )) {
           send(event);
         }
       } catch (e) {

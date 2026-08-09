@@ -34,8 +34,11 @@ import {
   getVehicleHistory,
   saveAuditToHistory,
   summarizeHistoryForPrompt,
+  getCachedSchedule,
+  saveCachedSchedule,
   type AuditRecord,
 } from "@/lib/vehicleHistory";
+import type { ScheduleResult } from "@/lib/tools";
 
 type TraceLine = { id: number; label: string };
 
@@ -139,6 +142,7 @@ export default function AgentConsole() {
     const mileageMiles = unit === "km" ? kmToMiles(Number(mileage)) : Number(mileage);
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
     const historyNote = summarizeHistoryForPrompt(getVehicleHistory(identifier));
+    const cachedSchedule = getCachedSchedule(identifier);
     const effectiveQuote = quoteMode === "photo" ? "" : quote;
     const effectiveQuoteImage = quoteMode === "photo" ? quoteImage || undefined : undefined;
     const parsedAmount = Number(amountQuoted);
@@ -163,6 +167,7 @@ export default function AgentConsole() {
                 quoteImage: effectiveQuoteImage,
                 amountQuoted: effectiveAmountQuoted,
                 zip: zip.trim(),
+                cachedSchedule,
               }
             : {
                 mode,
@@ -176,6 +181,7 @@ export default function AgentConsole() {
                 quoteImage: effectiveQuoteImage,
                 amountQuoted: effectiveAmountQuoted,
                 zip: zip.trim(),
+                cachedSchedule,
               }
         ),
       });
@@ -207,10 +213,15 @@ export default function AgentConsole() {
             const label =
               event.name === "vin_decode"
                 ? `Decoding VIN ${String(event.input.vin ?? "")}...`
-                : `Looking up maintenance schedule for ${event.input.make} ${event.input.model}...`;
+                : `Researching the real ${[event.input.year, event.input.make, event.input.model]
+                    .filter(Boolean)
+                    .join(" ")} maintenance schedule...`;
             pushTrace(label);
           } else if (event.type === "tool_result") {
             pushTrace(`✓ ${event.name} returned a result`);
+            if (event.name === "get_maintenance_schedule") {
+              saveCachedSchedule(identifier, event.result as ScheduleResult);
+            }
           } else if (event.type === "final") {
             pushTrace("✓ Compiling findings...");
             setFindings(event.findings);
@@ -582,6 +593,7 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
     disputeDraft,
     transcribedItems,
     priceAssessment,
+    scheduleSources,
   } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -626,9 +638,16 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
               Severe-duty driving
             </div>
           )}
-          {!exactMatch && (
+          {exactMatch ? (
+            <div className="text-xs px-3 py-1.5 rounded-full border border-ok/30 bg-ok/10 text-ok">
+              Real manufacturer schedule
+              {scheduleSources && scheduleSources.length > 0
+                ? ` · ${scheduleSources.length} source${scheduleSources.length === 1 ? "" : "s"}`
+                : ""}
+            </div>
+          ) : (
             <div className="text-xs px-3 py-1.5 rounded-full border border-warn/30 bg-warn/10 text-warn">
-              Generic schedule estimate — not model-exact
+              Generic estimate — no model-specific schedule found
             </div>
           )}
         </div>
@@ -756,10 +775,32 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
 
       {/* Full schedule status */}
       <div className="glass rounded-2xl p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <div className="text-sm font-semibold">Manufacturer maintenance schedule</div>
           <div className="text-[11px] text-white/30">{scheduleSource}</div>
         </div>
+        {scheduleSources && scheduleSources.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1">
+            {scheduleSources.map((source, i) => (
+              <a
+                key={i}
+                href={source}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-accent transition"
+              >
+                <ExternalLink className="size-3" />
+                {(() => {
+                  try {
+                    return new URL(source).hostname.replace(/^www\./, "");
+                  } catch {
+                    return source;
+                  }
+                })()}
+              </a>
+            ))}
+          </div>
+        )}
         <div className="grid sm:grid-cols-2 gap-2.5">
           {items.map((item, i) => {
             const meta = STATUS_META[item.status];
