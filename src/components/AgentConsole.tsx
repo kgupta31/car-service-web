@@ -16,9 +16,12 @@ import {
   Wrench,
   Copy,
   Check,
+  Image as ImageIcon,
+  X,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
+import { compressImageToDataUrl } from "@/lib/image";
 import { VehicleIcon } from "@/components/VehicleIcon";
 import { FollowupChat } from "@/components/FollowupChat";
 import { PastAuditsList } from "@/components/PastAuditsList";
@@ -59,6 +62,10 @@ export default function AgentConsole() {
   const [mileage, setMileage] = useState<string>("60000");
   const [unit, setUnit] = useState<"mi" | "km">("mi");
   const [quote, setQuote] = useState("");
+  const [quoteMode, setQuoteMode] = useState<"text" | "photo">("text");
+  const [quoteImage, setQuoteImage] = useState<string | null>(null);
+  const [quoteImageError, setQuoteImageError] = useState<string | null>(null);
+  const [compressingImage, setCompressingImage] = useState(false);
   const [drivingConditions, setDrivingConditions] = useState("");
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
@@ -77,6 +84,22 @@ export default function AgentConsole() {
     /^\d{4}$/.test(manualYear.trim()) && manualMake.trim().length > 0 && manualModel.trim().length > 0;
   const canSubmit = mode === "vin" ? vinValid : manualValid;
 
+  async function handleQuoteImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setQuoteImageError(null);
+    setCompressingImage(true);
+    try {
+      const dataUrl = await compressImageToDataUrl(file);
+      setQuoteImage(dataUrl);
+    } catch (err) {
+      setQuoteImageError((err as Error).message);
+      setQuoteImage(null);
+    } finally {
+      setCompressingImage(false);
+    }
+  }
+
   async function runAgent(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -94,6 +117,8 @@ export default function AgentConsole() {
     const mileageMiles = unit === "km" ? kmToMiles(Number(mileage)) : Number(mileage);
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
     const historyNote = summarizeHistoryForPrompt(getVehicleHistory(identifier));
+    const effectiveQuote = quoteMode === "photo" ? "" : quote;
+    const effectiveQuoteImage = quoteMode === "photo" ? quoteImage || undefined : undefined;
 
     try {
       const res = await fetch("/api/agent", {
@@ -101,16 +126,25 @@ export default function AgentConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           mode === "vin"
-            ? { mode, vin: vin.trim(), mileage: mileageMiles, quote, drivingConditions, historyNote }
+            ? {
+                mode,
+                vin: vin.trim(),
+                mileage: mileageMiles,
+                quote: effectiveQuote,
+                drivingConditions,
+                historyNote,
+                quoteImage: effectiveQuoteImage,
+              }
             : {
                 mode,
                 year: manualYear.trim(),
                 make: manualMake.trim(),
                 model: manualModel.trim(),
                 mileage: mileageMiles,
-                quote,
+                quote: effectiveQuote,
                 drivingConditions,
                 historyNote,
+                quoteImage: effectiveQuoteImage,
               }
         ),
       });
@@ -284,17 +318,75 @@ export default function AgentConsole() {
           </div>
 
           <div className="sm:col-span-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
-              <FileText className="size-4 text-accent" />
-              Dealer / shop quote <span className="text-white/30 font-normal">(optional, comma-separated)</span>
-            </label>
-            <textarea
-              value={quote}
-              onChange={(e) => setQuote(e.target.value)}
-              rows={2}
-              placeholder="Transmission flush, Timing belt replacement, Cabin air filter, Wiper blades"
-              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition resize-none placeholder:text-white/20"
-            />
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-white/70">
+                <FileText className="size-4 text-accent" />
+                Dealer / shop quote <span className="text-white/30 font-normal">(optional)</span>
+              </label>
+              <div className="flex rounded-lg border border-white/10 overflow-hidden text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuoteMode("text");
+                    setQuoteImage(null);
+                    setQuoteImageError(null);
+                  }}
+                  className={`px-2 py-1 transition ${
+                    quoteMode === "text" ? "bg-accent/20 text-accent" : "text-white/40"
+                  }`}
+                >
+                  Type it in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuoteMode("photo");
+                    setQuote("");
+                  }}
+                  className={`px-2 py-1 transition ${
+                    quoteMode === "photo" ? "bg-accent/20 text-accent" : "text-white/40"
+                  }`}
+                >
+                  Upload a photo
+                </button>
+              </div>
+            </div>
+            {quoteMode === "text" ? (
+              <textarea
+                value={quote}
+                onChange={(e) => setQuote(e.target.value)}
+                rows={2}
+                placeholder="Transmission flush, Timing belt replacement, Cabin air filter, Wiper blades"
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition resize-none placeholder:text-white/20"
+              />
+            ) : (
+              <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3">
+                <label className="inline-flex items-center gap-2 text-xs text-white/60 cursor-pointer">
+                  <ImageIcon className="size-4 text-accent" />
+                  Choose a photo of your quote
+                  <input type="file" accept="image/*" onChange={handleQuoteImageChange} className="hidden" />
+                </label>
+                {compressingImage && <p className="text-xs text-white/40 mt-2">Processing image...</p>}
+                {quoteImageError && <p className="text-xs text-danger mt-2">{quoteImageError}</p>}
+                {quoteImage && !compressingImage && (
+                  <div className="mt-3 flex items-center gap-3">
+                    <img
+                      src={quoteImage}
+                      alt="Quote preview"
+                      className="h-16 w-16 object-cover rounded-lg border border-white/10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setQuoteImage(null)}
+                      className="inline-flex items-center gap-1 text-xs text-white/40 hover:text-white/70 transition"
+                    >
+                      <X className="size-3.5" />
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="sm:col-span-2">
@@ -395,7 +487,17 @@ export default function AgentConsole() {
 }
 
 function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km" }) {
-  const { vehicle, mileage, items, quoteVerdicts, summary, exactMatch, scheduleSource, disputeDraft } = findings;
+  const {
+    vehicle,
+    mileage,
+    items,
+    quoteVerdicts,
+    summary,
+    exactMatch,
+    scheduleSource,
+    disputeDraft,
+    transcribedItems,
+  } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -452,6 +554,21 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
         <div className="text-[11px] uppercase tracking-wider text-white/40 mb-2">Bottom line</div>
         <p className="text-white/90 leading-relaxed">{summary}</p>
       </div>
+
+      {/* What we read from the photo, if one was uploaded */}
+      {transcribedItems && transcribedItems.length > 0 && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center gap-2 text-sm font-semibold mb-3">
+            <ImageIcon className="size-4 text-accent" />
+            Read from your photo
+          </div>
+          <ul className="text-xs text-white/50 space-y-1 list-disc list-inside">
+            {transcribedItems.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Quote audit, if a quote was given */}
       {quoteVerdicts.length > 0 && (
