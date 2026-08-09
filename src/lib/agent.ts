@@ -234,12 +234,18 @@ async function assessPriceReasonableness(
     if (!raw) return null;
 
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.verdict !== "string" || typeof parsed.explanation !== "string") {
+    const validVerdicts = ["in_range", "high", "low", "unknown"];
+    if (
+      !parsed ||
+      typeof parsed.verdict !== "string" ||
+      !validVerdicts.includes(parsed.verdict) ||
+      typeof parsed.explanation !== "string"
+    ) {
       return null;
     }
 
     return {
-      verdict: parsed.verdict,
+      verdict: parsed.verdict as PriceAssessment["verdict"],
       explanation: parsed.explanation,
       sources: Array.isArray(parsed.sources) ? parsed.sources.filter((s: unknown) => typeof s === "string") : [],
     };

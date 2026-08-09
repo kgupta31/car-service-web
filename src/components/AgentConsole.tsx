@@ -687,9 +687,9 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
               Is the price fair?
             </div>
             <span
-              className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${PRICE_VERDICT_META[priceAssessment.verdict].color}`}
+              className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${(PRICE_VERDICT_META[priceAssessment.verdict] ?? PRICE_VERDICT_META.unknown).color}`}
             >
-              {PRICE_VERDICT_META[priceAssessment.verdict].label}
+              {(PRICE_VERDICT_META[priceAssessment.verdict] ?? PRICE_VERDICT_META.unknown).label}
             </span>
           </div>
           <p className="text-sm text-white/70 leading-relaxed">{priceAssessment.explanation}</p>
