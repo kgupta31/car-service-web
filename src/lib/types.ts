@@ -26,6 +26,7 @@ export type Findings = {
   summary: string;
   dutyClassification?: DutyClassification;
   dutyReason?: string;
+  disputeDraft?: string;
 };
 
 export type AgentEvent =

@@ -56,7 +56,13 @@ has proposed, you must:
    in the summary and set dutyClassification to "severe" with a one-sentence dutyReason. If no
    driving-condition info was given, or it doesn't meet any severe-duty criteria, set
    dutyClassification to "normal".
-7. Finish by calling present_findings with the full structured result — this IS your final answer,
+7. If ANY quote item's verdict is "premature" or "not_on_schedule", draft a short, polite,
+   specific message the user could say or send to the shop pushing back on it — cite the exact
+   manufacturer-schedule numbers (e.g. "My schedule shows transmission service at 60,000 miles;
+   I'm at 32,000, so this is premature by 28,000 miles — can you clarify what's prompting it
+   now?"). Put this in disputeDraft. If every quote item is "justified" (or no quote was given),
+   leave disputeDraft out entirely.
+8. Finish by calling present_findings with the full structured result — this IS your final answer,
    do not also write a text response after it. Include a concise plain-English summary sentence.`;
 
 const PRESENT_FINDINGS_TOOL = {
@@ -110,6 +116,7 @@ const PRESENT_FINDINGS_TOOL = {
         summary: { type: "string" },
         dutyClassification: { type: "string", enum: ["normal", "severe"] },
         dutyReason: { type: "string" },
+        disputeDraft: { type: "string" },
       },
       required: ["vehicle", "mileage", "scheduleSource", "exactMatch", "items", "quoteVerdicts", "summary"],
     },
