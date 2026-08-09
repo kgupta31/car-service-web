@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { runAgent } from "@/lib/agent";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +33,18 @@ function buildUserMessage(vehicle: VehicleInput, mileage: number, quoteItems: st
 }
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const { limited, retryAfterSeconds } = checkRateLimit(ip);
+  if (limited) {
+    return new Response(
+      JSON.stringify({ error: "Too many requests. Please wait a bit before trying again." }),
+      {
+        status: 429,
+        headers: { "Content-Type": "application/json", "Retry-After": String(retryAfterSeconds) },
+      }
+    );
+  }
+
   const body = await req.json();
   const { mode, vin, year, make, model, mileage, quote } = body as {
     mode?: "vin" | "manual";
