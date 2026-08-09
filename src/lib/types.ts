@@ -16,6 +16,14 @@ export type QuoteVerdict = {
 
 export type DutyClassification = "normal" | "severe";
 
+export type PriceVerdict = "in_range" | "high" | "low" | "unknown";
+
+export type PriceAssessment = {
+  verdict: PriceVerdict;
+  explanation: string;
+  sources: string[];
+};
+
 export type Findings = {
   vehicle: { year: string; make: string; model: string; trim?: string };
   mileage: number;
@@ -28,6 +36,7 @@ export type Findings = {
   dutyReason?: string;
   disputeDraft?: string;
   transcribedItems?: string[];
+  priceAssessment?: PriceAssessment;
 };
 
 export type AgentEvent =

@@ -16,7 +16,7 @@
 import OpenAI from "openai";
 import { TOOL_SCHEMAS, runTool, computeScheduleItemStatus } from "./tools";
 import type { ScheduleResult } from "./tools";
-import type { Findings, FindingsItem, AgentEvent, ChatMessage } from "./types";
+import type { Findings, FindingsItem, AgentEvent, ChatMessage, PriceAssessment } from "./types";
 
 export type { Findings, AgentEvent } from "./types";
 
@@ -31,6 +31,12 @@ const MODEL = "llama-3.3-70b-versatile";
 // Check https://console.groq.com/docs/vision for what's current if this
 // stops working.
 const VISION_MODEL = "qwen/qwen3.6-27b";
+// Web-search-grounded model, used only for the optional price-reasonableness
+// check. groq/compound (the full multi-tool-call variant) returned a 413 on
+// every request on this account/tier — groq/compound-mini works and is
+// confirmed (via a live test) to do real web search and return clean JSON
+// when asked to. Same Groq account/key, no new vendor.
+const PRICE_MODEL = "groq/compound-mini";
 
 const SYSTEM_PROMPT = `You are a car maintenance advisor agent. Your job is to protect the user
 from paying for services they don't yet need, while also flagging services that genuinely ARE
@@ -188,7 +194,66 @@ function fillMissingScheduleItems(
   return { ...findings, items: [...findings.items, ...added] };
 }
 
-export async function* runAgent(userMessage: string, quoteImage?: string): AsyncGenerator<AgentEvent> {
+// Separate, best-effort call — never blocks or breaks the primary audit.
+// Returns null on any failure (bad JSON, network error, no verdict) so the
+// caller can just skip attaching a priceAssessment.
+async function assessPriceReasonableness(
+  client: OpenAI,
+  vehicle: Findings["vehicle"],
+  quoteVerdicts: Findings["quoteVerdicts"],
+  amountQuoted: number,
+  zip: string
+): Promise<PriceAssessment | null> {
+  if (quoteVerdicts.length === 0) return null;
+
+  const itemsList = quoteVerdicts.map((qv) => qv.item).join(", ");
+  const prompt =
+    `Search the web for typical price ranges for the following car repair/maintenance services: ` +
+    `${itemsList}, for a ${vehicle.year} ${vehicle.make} ${vehicle.model}` +
+    `${zip ? ` near ZIP ${zip}` : ""} in the US. The customer was quoted a total of $${amountQuoted}. ` +
+    `Say whether that total looks in-range, high, or low compared to typical prices, with a brief ` +
+    `explanation and 1-3 source URLs.`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: PRICE_MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a car repair pricing research assistant. Use web search to find real, current " +
+            "typical prices. Respond with ONLY a JSON object, no other text, no markdown fences, " +
+            'matching this exact shape: {"verdict": "in_range" | "high" | "low" | "unknown", ' +
+            '"explanation": string, "sources": string[]}.',
+        },
+        { role: "user", content: prompt },
+      ],
+    });
+
+    const raw = response.choices[0].message.content;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.verdict !== "string" || typeof parsed.explanation !== "string") {
+      return null;
+    }
+
+    return {
+      verdict: parsed.verdict,
+      explanation: parsed.explanation,
+      sources: Array.isArray(parsed.sources) ? parsed.sources.filter((s: unknown) => typeof s === "string") : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function* runAgent(
+  userMessage: string,
+  quoteImage?: string,
+  amountQuoted?: number,
+  zip?: string
+): AsyncGenerator<AgentEvent> {
   const client = getClient();
 
   const firstUserMessage: OpenAI.Chat.ChatCompletionMessageParam = quoteImage
@@ -263,6 +328,20 @@ export async function* runAgent(userMessage: string, quoteImage?: string): Async
           rawFindings.exactMatch = rawFindings.exactMatch.trim().toLowerCase() === "true";
         }
         const findings = fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage);
+
+        if (amountQuoted && amountQuoted > 0) {
+          const priceAssessment = await assessPriceReasonableness(
+            client,
+            findings.vehicle,
+            findings.quoteVerdicts,
+            amountQuoted,
+            zip || ""
+          );
+          if (priceAssessment) {
+            findings.priceAssessment = priceAssessment;
+          }
+        }
+
         yield { type: "final", findings };
         return;
       }
