@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { runAgent } from "@/lib/agent";
+import { runAgent, transcribeQuoteImage } from "@/lib/agent";
 import { checkRateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
@@ -15,7 +15,7 @@ function buildUserMessage(
   quoteItems: string[],
   drivingConditions: string,
   historyNote: string,
-  hasQuoteImage: boolean
+  photoUnreadable: boolean
 ): string {
   let msg: string;
   if ("vin" in vehicle) {
@@ -27,16 +27,17 @@ function buildUserMessage(
       `straight to looking up the maintenance schedule for this make/model. My current mileage is ${mileage}.\n`;
   }
 
-  if (hasQuoteImage) {
-    msg +=
-      "\nI've attached a photo of my dealer/shop quote. Please read the line items directly from " +
-      "the photo and use those as the quoted services.";
-  } else if (quoteItems.length > 0) {
+  if (quoteItems.length > 0) {
     const items = quoteItems.map((s) => `- ${s.trim()}`).join("\n");
     msg +=
       `\nMy dealership/shop has proposed the following services:\n${items}\n\n` +
       "Tell me which of these are actually justified right now, which are premature, " +
       "and which aren't on the manufacturer schedule at all.";
+  } else if (photoUnreadable) {
+    msg +=
+      "\nI attached a photo of my dealer/shop quote, but no clear line items could be read from it " +
+      "(too blurry/unclear). Mention this in the summary, and just tell me what's overdue, what's " +
+      "due now, and what's coming up soon based on my mileage.";
   } else {
     msg +=
       "\nNo quote was given to me yet. Just tell me what's overdue, what's due now, " +
@@ -149,10 +150,22 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const quoteItems = (quote || "")
+  let quoteItems = (quote || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+  // Transcribe the photo BEFORE the main loop runs, as its own short, isolated
+  // call — so a photo only adds one bounded vision call instead of forcing the
+  // entire multi-turn tool-calling loop onto a slower vision model. From here
+  // on, transcribed items are treated exactly like typed quote items.
+  let transcribedItems: string[] = [];
+  if (quoteImage) {
+    transcribedItems = await transcribeQuoteImage(quoteImage);
+    if (transcribedItems.length > 0) {
+      quoteItems = transcribedItems;
+    }
+  }
 
   const userMessage = buildUserMessage(
     vehicleInput,
@@ -160,7 +173,7 @@ export async function POST(req: NextRequest) {
     quoteItems,
     drivingConditions || "",
     historyNote || "",
-    Boolean(quoteImage)
+    Boolean(quoteImage) && transcribedItems.length === 0
   );
 
   const encoder = new TextEncoder();
@@ -170,7 +183,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       };
       try {
-        for await (const event of runAgent(userMessage, quoteImage, validAmountQuoted, trimmedZip)) {
+        for await (const event of runAgent(userMessage, transcribedItems, validAmountQuoted, trimmedZip)) {
           send(event);
         }
       } catch (e) {
