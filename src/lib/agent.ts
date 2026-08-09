@@ -215,20 +215,26 @@ async function assessPriceReasonableness(
     `explanation and 1-3 source URLs.`;
 
   try {
-    const response = await client.chat.completions.create({
-      model: PRICE_MODEL,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a car repair pricing research assistant. Use web search to find real, current " +
-            "typical prices. Respond with ONLY a JSON object, no other text, no markdown fences, " +
-            'matching this exact shape: {"verdict": "in_range" | "high" | "low" | "unknown", ' +
-            '"explanation": string, "sources": string[]}.',
-        },
-        { role: "user", content: prompt },
-      ],
-    });
+    const response = await client.chat.completions.create(
+      {
+        model: PRICE_MODEL,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a car repair pricing research assistant. Use web search to find real, current " +
+              "typical prices. Respond with ONLY a JSON object, no other text, no markdown fences, " +
+              'matching this exact shape: {"verdict": "in_range" | "high" | "low" | "unknown", ' +
+              '"explanation": string, "sources": string[]}.',
+          },
+          { role: "user", content: prompt },
+        ],
+      },
+      // Bounded so this optional, best-effort call can never eat enough of the
+      // route's fixed maxDuration to silently truncate the primary audit —
+      // it's already designed to degrade to "no priceAssessment" on failure.
+      { timeout: 15_000 }
+    );
 
     const raw = response.choices[0].message.content;
     if (!raw) return null;

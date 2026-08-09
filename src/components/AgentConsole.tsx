@@ -188,6 +188,7 @@ export default function AgentConsole() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let settled = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -215,10 +216,22 @@ export default function AgentConsole() {
             setFindings(event.findings);
             saveAuditToHistory(identifier, event.findings);
             setPastAudits(getVehicleHistory(identifier)?.audits ?? []);
+            settled = true;
           } else if (event.type === "error") {
             setError(event.message);
+            settled = true;
           }
         }
+      }
+
+      // The connection can close (function timeout, crash, network drop) without
+      // ever sending a final/error event. Without this, the UI would just sit on
+      // the trace forever with no result and no explanation.
+      if (!settled) {
+        setError(
+          "The request was cut off before finishing — this can happen when a photo or price " +
+            "lookup takes too long. Try again, or leave the photo/price fields empty for a faster result."
+        );
       }
     } catch (err) {
       setError((err as Error).message);
