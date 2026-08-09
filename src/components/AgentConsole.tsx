@@ -16,6 +16,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
+import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
 
 type TraceLine = { id: number; label: string };
 
@@ -44,6 +45,7 @@ export default function AgentConsole() {
   const [manualMake, setManualMake] = useState("");
   const [manualModel, setManualModel] = useState("");
   const [mileage, setMileage] = useState<string>("60000");
+  const [unit, setUnit] = useState<"mi" | "km">("mi");
   const [quote, setQuote] = useState("");
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
@@ -70,19 +72,21 @@ export default function AgentConsole() {
       setTrace((prev) => [...prev, { id: traceIdRef.current, label }]);
     };
 
+    const mileageMiles = unit === "km" ? kmToMiles(Number(mileage)) : Number(mileage);
+
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           mode === "vin"
-            ? { mode, vin: vin.trim(), mileage: Number(mileage), quote }
+            ? { mode, vin: vin.trim(), mileage: mileageMiles, quote }
             : {
                 mode,
                 year: manualYear.trim(),
                 make: manualMake.trim(),
                 model: manualModel.trim(),
-                mileage: Number(mileage),
+                mileage: mileageMiles,
                 quote,
               }
         ),
@@ -218,14 +222,32 @@ export default function AgentConsole() {
           )}
 
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
-              <Gauge className="size-4 text-accent" />
-              Current mileage
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-white/70">
+                <Gauge className="size-4 text-accent" />
+                Current {unit === "mi" ? "mileage" : "kilometers"}
+              </label>
+              <div className="flex rounded-lg border border-white/10 overflow-hidden text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setUnit("mi")}
+                  className={`px-2 py-1 transition ${unit === "mi" ? "bg-accent/20 text-accent" : "text-white/40"}`}
+                >
+                  mi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnit("km")}
+                  className={`px-2 py-1 transition ${unit === "km" ? "bg-accent/20 text-accent" : "text-white/40"}`}
+                >
+                  km
+                </button>
+              </div>
+            </div>
             <input
               type="number"
               min={0}
-              max={500000}
+              max={800000}
               value={mileage}
               onChange={(e) => setMileage(e.target.value)}
               className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition"
@@ -316,13 +338,29 @@ export default function AgentConsole() {
         </motion.div>
       )}
 
-      <AnimatePresence>{findings && <ResultsView findings={findings} />}</AnimatePresence>
+      <AnimatePresence>
+        {findings && (
+          <ResultsView
+            key={`${findings.vehicle.year}-${findings.vehicle.make}-${findings.vehicle.model}`}
+            findings={findings}
+            unit={unit}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function ResultsView({ findings }: { findings: Findings }) {
+function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km" }) {
   const { vehicle, mileage, items, quoteVerdicts, summary, exactMatch, scheduleSource } = findings;
+  const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
+
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = `https://cdn.imagin.studio/getImage?customer=${
+    process.env.NEXT_PUBLIC_IMAGIN_CUSTOMER_KEY || "hello"
+  }&make=${encodeURIComponent(vehicle.make)}&modelFamily=${encodeURIComponent(
+    vehicle.model
+  )}&modelYear=${encodeURIComponent(vehicle.year)}&angle=01`;
 
   return (
     <motion.div
@@ -334,14 +372,25 @@ function ResultsView({ findings }: { findings: Findings }) {
       {/* Vehicle summary */}
       <div className="glass rounded-2xl p-6 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          <div className="size-12 rounded-xl bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center shrink-0">
-            <Car className="size-6 text-black" />
-          </div>
+          {!imageFailed ? (
+            <img
+              src={imageUrl}
+              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+              className="size-12 rounded-xl object-cover shrink-0 bg-white/5"
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <div className="size-12 rounded-xl bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center shrink-0">
+              <Car className="size-6 text-black" />
+            </div>
+          )}
           <div>
             <div className="text-lg font-semibold">
               {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim ? `· ${vehicle.trim}` : ""}
             </div>
-            <div className="text-sm text-white/40">{mileage.toLocaleString()} miles on the odometer</div>
+            <div className="text-sm text-white/40">
+              {displayMileage.toLocaleString()} {unit === "mi" ? "miles" : "km"} on the odometer
+            </div>
           </div>
         </div>
         {!exactMatch && (
@@ -418,7 +467,9 @@ function ResultsView({ findings }: { findings: Findings }) {
                   <span className={`text-[11px] px-2 py-0.5 rounded-full border ${meta.color}`}>
                     {meta.label}
                   </span>
-                  <span className="text-[11px] text-white/40">{item.milesInfo}</span>
+                  <span className="text-[11px] text-white/40">
+                    {unit === "km" ? convertMilesInfoToKm(item.milesInfo) : item.milesInfo}
+                  </span>
                 </div>
               </motion.div>
             );
