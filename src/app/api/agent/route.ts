@@ -11,7 +11,8 @@ function buildUserMessage(
   vehicle: VehicleInput,
   mileage: number,
   quoteItems: string[],
-  drivingConditions: string
+  drivingConditions: string,
+  historyNote: string
 ): string {
   let msg: string;
   if ("vin" in vehicle) {
@@ -39,6 +40,10 @@ function buildUserMessage(
     msg += `\n\nHere's how I actually drive this vehicle: ${drivingConditions.trim()}`;
   }
 
+  if (historyNote.trim().length > 0) {
+    msg += `\n\nThis vehicle has prior audit history:\n${historyNote.trim()}`;
+  }
+
   return msg;
 }
 
@@ -56,7 +61,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { mode, vin, year, make, model, mileage, quote, drivingConditions } = body as {
+  const { mode, vin, year, make, model, mileage, quote, drivingConditions, historyNote } = body as {
     mode?: "vin" | "manual";
     vin?: string;
     year?: string;
@@ -65,6 +70,7 @@ export async function POST(req: NextRequest) {
     mileage?: number;
     quote?: string;
     drivingConditions?: string;
+    historyNote?: string;
   };
 
   const resolvedMode = mode === "manual" ? "manual" : "vin";
@@ -104,7 +110,13 @@ export async function POST(req: NextRequest) {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const userMessage = buildUserMessage(vehicleInput, mileage, quoteItems, drivingConditions || "");
+  const userMessage = buildUserMessage(
+    vehicleInput,
+    mileage,
+    quoteItems,
+    drivingConditions || "",
+    historyNote || ""
+  );
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

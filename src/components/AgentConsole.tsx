@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Car,
@@ -21,6 +21,14 @@ import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
 import { VehicleIcon } from "@/components/VehicleIcon";
 import { FollowupChat } from "@/components/FollowupChat";
+import { PastAuditsList } from "@/components/PastAuditsList";
+import {
+  vehicleIdentifier,
+  getVehicleHistory,
+  saveAuditToHistory,
+  summarizeHistoryForPrompt,
+  type AuditRecord,
+} from "@/lib/vehicleHistory";
 
 type TraceLine = { id: number; label: string };
 
@@ -56,7 +64,13 @@ export default function AgentConsole() {
   const [trace, setTrace] = useState<TraceLine[]>([]);
   const [findings, setFindings] = useState<Findings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pastAudits, setPastAudits] = useState<AuditRecord[]>([]);
   const traceIdRef = useRef(0);
+
+  useEffect(() => {
+    const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
+    setPastAudits(getVehicleHistory(identifier)?.audits ?? []);
+  }, [mode, vin, manualYear, manualMake, manualModel]);
 
   const vinValid = vin.trim().length === 17;
   const manualValid =
@@ -78,6 +92,8 @@ export default function AgentConsole() {
     };
 
     const mileageMiles = unit === "km" ? kmToMiles(Number(mileage)) : Number(mileage);
+    const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
+    const historyNote = summarizeHistoryForPrompt(getVehicleHistory(identifier));
 
     try {
       const res = await fetch("/api/agent", {
@@ -85,7 +101,7 @@ export default function AgentConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           mode === "vin"
-            ? { mode, vin: vin.trim(), mileage: mileageMiles, quote, drivingConditions }
+            ? { mode, vin: vin.trim(), mileage: mileageMiles, quote, drivingConditions, historyNote }
             : {
                 mode,
                 year: manualYear.trim(),
@@ -94,6 +110,7 @@ export default function AgentConsole() {
                 mileage: mileageMiles,
                 quote,
                 drivingConditions,
+                historyNote,
               }
         ),
       });
@@ -131,6 +148,8 @@ export default function AgentConsole() {
           } else if (event.type === "final") {
             pushTrace("✓ Compiling findings...");
             setFindings(event.findings);
+            saveAuditToHistory(identifier, event.findings);
+            setPastAudits(getVehicleHistory(identifier)?.audits ?? []);
           } else if (event.type === "error") {
             setError(event.message);
           }
@@ -145,6 +164,7 @@ export default function AgentConsole() {
 
   return (
     <div className="w-full max-w-3xl mx-auto">
+      <PastAuditsList audits={pastAudits} />
       <form
         onSubmit={runAgent}
         className="glass rounded-2xl p-6 sm:p-8 shadow-2xl shadow-black/40"
@@ -224,6 +244,9 @@ export default function AgentConsole() {
                   className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
                 />
               </div>
+              <p className="sm:col-span-3 text-[11px] text-white/30">
+                Without a VIN, audit history is shared across any vehicle with this same year/make/model.
+              </p>
             </div>
           )}
 
