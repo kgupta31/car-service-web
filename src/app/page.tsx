@@ -1,4 +1,5 @@
 import AgentConsole from "@/components/AgentConsole";
+import { FAQAccordion } from "@/components/FAQAccordion";
 import { ShieldCheck, Zap, GitBranch } from "lucide-react";
 import { SITE_URL, SITE_DESCRIPTION } from "@/lib/site";
 
@@ -128,14 +129,7 @@ export default function Home() {
           <h2 className="text-2xl font-semibold tracking-tight text-center mb-10">
             Frequently asked questions
           </h2>
-          <div className="space-y-6">
-            {FAQ_ITEMS.map((item) => (
-              <div key={item.q} className="glass rounded-2xl p-6">
-                <h3 className="text-sm font-semibold mb-2">{item.q}</h3>
-                <p className="text-sm text-white/50 leading-relaxed">{item.a}</p>
-              </div>
-            ))}
-          </div>
+          <FAQAccordion items={FAQ_ITEMS} />
         </section>
       </div>
     </main>
