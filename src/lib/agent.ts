@@ -62,7 +62,12 @@ has proposed, you must:
    I'm at 32,000, so this is premature by 28,000 miles — can you clarify what's prompting it
    now?"). Put this in disputeDraft. If every quote item is "justified" (or no quote was given),
    leave disputeDraft out entirely.
-8. Finish by calling present_findings with the full structured result — this IS your final answer,
+8. If the user's message includes prior audit history for this vehicle, check whether any
+   currently-quoted item was already flagged as "premature" or "not_on_schedule" in a past audit
+   at a similar mileage (within ~2,000 miles). If so, explicitly call this out as likely duplicate
+   billing in the summary — the same or a different shop may be re-quoting something already
+   flagged.
+9. Finish by calling present_findings with the full structured result — this IS your final answer,
    do not also write a text response after it. Include a concise plain-English summary sentence.`;
 
 const PRESENT_FINDINGS_TOOL = {
