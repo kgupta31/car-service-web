@@ -68,7 +68,20 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { mode, vin, year, make, model, mileage, quote, drivingConditions, historyNote, quoteImage } = body as {
+  const {
+    mode,
+    vin,
+    year,
+    make,
+    model,
+    mileage,
+    quote,
+    drivingConditions,
+    historyNote,
+    quoteImage,
+    amountQuoted,
+    zip,
+  } = body as {
     mode?: "vin" | "manual";
     vin?: string;
     year?: string;
@@ -79,7 +92,15 @@ export async function POST(req: NextRequest) {
     drivingConditions?: string;
     historyNote?: string;
     quoteImage?: string;
+    amountQuoted?: number;
+    zip?: string;
   };
+
+  const validAmountQuoted =
+    typeof amountQuoted === "number" && Number.isFinite(amountQuoted) && amountQuoted > 0
+      ? amountQuoted
+      : undefined;
+  const trimmedZip = typeof zip === "string" ? zip.trim() : "";
 
   if (quoteImage) {
     if (typeof quoteImage !== "string" || !/^data:image\/(png|jpe?g|webp);base64,/.test(quoteImage)) {
@@ -149,7 +170,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       };
       try {
-        for await (const event of runAgent(userMessage, quoteImage)) {
+        for await (const event of runAgent(userMessage, quoteImage, validAmountQuoted, trimmedZip)) {
           send(event);
         }
       } catch (e) {

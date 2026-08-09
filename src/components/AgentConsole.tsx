@@ -18,6 +18,10 @@ import {
   Check,
   Image as ImageIcon,
   X,
+  DollarSign,
+  MapPin,
+  Search,
+  ExternalLink,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
@@ -53,6 +57,16 @@ const VERDICT_META: Record<
   not_on_schedule: { label: "Not on schedule", color: "text-danger border-danger/30 bg-danger/10", Icon: XCircle },
 };
 
+const PRICE_VERDICT_META: Record<
+  NonNullable<Findings["priceAssessment"]>["verdict"],
+  { label: string; color: string }
+> = {
+  in_range: { label: "Looks fair", color: "text-ok border-ok/30 bg-ok/10" },
+  high: { label: "Looks high", color: "text-danger border-danger/30 bg-danger/10" },
+  low: { label: "Looks low", color: "text-accent border-accent/30 bg-accent/10" },
+  unknown: { label: "Uncertain", color: "text-white/50 border-white/20 bg-white/5" },
+};
+
 export default function AgentConsole() {
   const [mode, setMode] = useState<"vin" | "manual">("vin");
   const [vin, setVin] = useState("");
@@ -67,6 +81,8 @@ export default function AgentConsole() {
   const [quoteImageError, setQuoteImageError] = useState<string | null>(null);
   const [compressingImage, setCompressingImage] = useState(false);
   const [drivingConditions, setDrivingConditions] = useState("");
+  const [amountQuoted, setAmountQuoted] = useState("");
+  const [zip, setZip] = useState("");
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
   const [findings, setFindings] = useState<Findings | null>(null);
@@ -125,6 +141,11 @@ export default function AgentConsole() {
     const historyNote = summarizeHistoryForPrompt(getVehicleHistory(identifier));
     const effectiveQuote = quoteMode === "photo" ? "" : quote;
     const effectiveQuoteImage = quoteMode === "photo" ? quoteImage || undefined : undefined;
+    const parsedAmount = Number(amountQuoted);
+    const effectiveAmountQuoted =
+      amountQuoted.trim().length > 0 && Number.isFinite(parsedAmount) && parsedAmount > 0
+        ? parsedAmount
+        : undefined;
 
     try {
       const res = await fetch("/api/agent", {
@@ -140,6 +161,8 @@ export default function AgentConsole() {
                 drivingConditions,
                 historyNote,
                 quoteImage: effectiveQuoteImage,
+                amountQuoted: effectiveAmountQuoted,
+                zip: zip.trim(),
               }
             : {
                 mode,
@@ -151,6 +174,8 @@ export default function AgentConsole() {
                 drivingConditions,
                 historyNote,
                 quoteImage: effectiveQuoteImage,
+                amountQuoted: effectiveAmountQuoted,
+                zip: zip.trim(),
               }
         ),
       });
@@ -417,6 +442,34 @@ export default function AgentConsole() {
               className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition resize-none placeholder:text-white/20"
             />
           </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
+              <DollarSign className="size-4 text-accent" />
+              Amount quoted <span className="text-white/30 font-normal">(optional)</span>
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={amountQuoted}
+              onChange={(e) => setAmountQuoted(e.target.value)}
+              placeholder="189.99"
+              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition"
+            />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
+              <MapPin className="size-4 text-accent" />
+              ZIP / region <span className="text-white/30 font-normal">(optional)</span>
+            </label>
+            <input
+              value={zip}
+              onChange={(e) => setZip(e.target.value)}
+              placeholder="94105"
+              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition"
+            />
+          </div>
         </div>
 
         <button
@@ -515,6 +568,7 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
     scheduleSource,
     disputeDraft,
     transcribedItems,
+    priceAssessment,
   } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -621,6 +675,46 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Price reasonableness, if an amount was given and the model produced an assessment */}
+      {priceAssessment && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Search className="size-4 text-accent" />
+              Is the price fair?
+            </div>
+            <span
+              className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${(PRICE_VERDICT_META[priceAssessment.verdict] ?? PRICE_VERDICT_META.unknown).color}`}
+            >
+              {(PRICE_VERDICT_META[priceAssessment.verdict] ?? PRICE_VERDICT_META.unknown).label}
+            </span>
+          </div>
+          <p className="text-sm text-white/70 leading-relaxed">{priceAssessment.explanation}</p>
+          {priceAssessment.sources.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+              {priceAssessment.sources.map((source, i) => (
+                <a
+                  key={i}
+                  href={source}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-accent transition"
+                >
+                  <ExternalLink className="size-3" />
+                  {(() => {
+                    try {
+                      return new URL(source).hostname.replace(/^www\./, "");
+                    } catch {
+                      return source;
+                    }
+                  })()}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
