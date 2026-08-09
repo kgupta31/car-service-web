@@ -14,6 +14,8 @@ export type QuoteVerdict = {
   explanation: string;
 };
 
+export type DutyClassification = "normal" | "severe";
+
 export type Findings = {
   vehicle: { year: string; make: string; model: string; trim?: string };
   mileage: number;
@@ -22,6 +24,8 @@ export type Findings = {
   items: FindingsItem[];
   quoteVerdicts: QuoteVerdict[];
   summary: string;
+  dutyClassification?: DutyClassification;
+  dutyReason?: string;
 };
 
 export type AgentEvent =

@@ -7,7 +7,12 @@ export const maxDuration = 60;
 
 type VehicleInput = { vin: string } | { manual: { year: string; make: string; model: string } };
 
-function buildUserMessage(vehicle: VehicleInput, mileage: number, quoteItems: string[]): string {
+function buildUserMessage(
+  vehicle: VehicleInput,
+  mileage: number,
+  quoteItems: string[],
+  drivingConditions: string
+): string {
   let msg: string;
   if ("vin" in vehicle) {
     msg = `My VIN is ${vehicle.vin} and my current mileage is ${mileage}.\n`;
@@ -29,6 +34,11 @@ function buildUserMessage(vehicle: VehicleInput, mileage: number, quoteItems: st
       "\nNo quote was given to me yet. Just tell me what's overdue, what's due now, " +
       "and what's coming up soon based on my mileage.";
   }
+
+  if (drivingConditions.trim().length > 0) {
+    msg += `\n\nHere's how I actually drive this vehicle: ${drivingConditions.trim()}`;
+  }
+
   return msg;
 }
 
@@ -46,7 +56,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { mode, vin, year, make, model, mileage, quote } = body as {
+  const { mode, vin, year, make, model, mileage, quote, drivingConditions } = body as {
     mode?: "vin" | "manual";
     vin?: string;
     year?: string;
@@ -54,6 +64,7 @@ export async function POST(req: NextRequest) {
     model?: string;
     mileage?: number;
     quote?: string;
+    drivingConditions?: string;
   };
 
   const resolvedMode = mode === "manual" ? "manual" : "vin";
@@ -93,7 +104,7 @@ export async function POST(req: NextRequest) {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const userMessage = buildUserMessage(vehicleInput, mileage, quoteItems);
+  const userMessage = buildUserMessage(vehicleInput, mileage, quoteItems, drivingConditions || "");
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

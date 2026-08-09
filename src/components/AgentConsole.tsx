@@ -48,6 +48,7 @@ export default function AgentConsole() {
   const [mileage, setMileage] = useState<string>("60000");
   const [unit, setUnit] = useState<"mi" | "km">("mi");
   const [quote, setQuote] = useState("");
+  const [drivingConditions, setDrivingConditions] = useState("");
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
   const [findings, setFindings] = useState<Findings | null>(null);
@@ -81,7 +82,7 @@ export default function AgentConsole() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           mode === "vin"
-            ? { mode, vin: vin.trim(), mileage: mileageMiles, quote }
+            ? { mode, vin: vin.trim(), mileage: mileageMiles, quote, drivingConditions }
             : {
                 mode,
                 year: manualYear.trim(),
@@ -89,6 +90,7 @@ export default function AgentConsole() {
                 model: manualModel.trim(),
                 mileage: mileageMiles,
                 quote,
+                drivingConditions,
               }
         ),
       });
@@ -268,6 +270,20 @@ export default function AgentConsole() {
               className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition resize-none placeholder:text-white/20"
             />
           </div>
+
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
+              <Gauge className="size-4 text-accent" />
+              Driving conditions <span className="text-white/30 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={drivingConditions}
+              onChange={(e) => setDrivingConditions(e.target.value)}
+              rows={2}
+              placeholder="e.g. I tow a small trailer most weekends, lots of short trips in winter"
+              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition resize-none placeholder:text-white/20"
+            />
+          </div>
         </div>
 
         <button
@@ -376,11 +392,21 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
             </div>
           </div>
         </div>
-        {!exactMatch && (
-          <div className="text-xs px-3 py-1.5 rounded-full border border-warn/30 bg-warn/10 text-warn">
-            Generic schedule estimate — not model-exact
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {findings.dutyClassification === "severe" && (
+            <div
+              className="text-xs px-3 py-1.5 rounded-full border border-warn/30 bg-warn/10 text-warn"
+              title={findings.dutyReason}
+            >
+              Severe-duty driving
+            </div>
+          )}
+          {!exactMatch && (
+            <div className="text-xs px-3 py-1.5 rounded-full border border-warn/30 bg-warn/10 text-warn">
+              Generic schedule estimate — not model-exact
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Summary callout */}
