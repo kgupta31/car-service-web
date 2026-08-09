@@ -14,6 +14,10 @@ export function FollowupChat({ findings }: { findings: Findings }) {
 
   const turnsUsed = messages.filter((m) => m.role === "user").length;
   const atLimit = turnsUsed >= MAX_TURNS;
+  // Full history is still sent to the API for context, but only the latest
+  // exchange is shown — this is a "current question" box, not a scrolling
+  // chat thread.
+  const visibleMessages = messages.slice(-2);
 
   async function ask(e: React.FormEvent) {
     e.preventDefault();
@@ -51,9 +55,9 @@ export function FollowupChat({ findings }: { findings: Findings }) {
         Ask a follow-up
       </div>
 
-      {messages.length > 0 && (
+      {visibleMessages.length > 0 && (
         <div className="space-y-3 mb-4">
-          {messages.map((m, i) => (
+          {visibleMessages.map((m, i) => (
             <div
               key={i}
               className={`rounded-xl p-3 text-sm leading-relaxed ${
