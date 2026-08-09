@@ -16,7 +16,7 @@
 import OpenAI from "openai";
 import { TOOL_SCHEMAS, runTool, computeScheduleItemStatus } from "./tools";
 import type { ScheduleResult } from "./tools";
-import type { Findings, FindingsItem, AgentEvent } from "./types";
+import type { Findings, FindingsItem, AgentEvent, ChatMessage } from "./types";
 
 export type { Findings, AgentEvent } from "./types";
 
@@ -242,4 +242,43 @@ export async function* runAgent(userMessage: string): AsyncGenerator<AgentEvent>
   }
 
   yield { type: "error", message: "Agent didn't converge on a final answer within the turn limit." };
+}
+
+export async function runFollowup(
+  findings: Findings,
+  history: ChatMessage[],
+  question: string
+): Promise<string> {
+  const client = getClient();
+
+  const context = JSON.stringify({
+    vehicle: findings.vehicle,
+    mileage: findings.mileage,
+    items: findings.items,
+    quoteVerdicts: findings.quoteVerdicts,
+    summary: findings.summary,
+  });
+
+  const systemPrompt =
+    `You already completed a maintenance-schedule audit for this vehicle. Here is that audit's ` +
+    `full result as JSON, which you should treat as ground truth — do not contradict it or ` +
+    `re-derive numbers differently:\n\n${context}\n\n` +
+    `Answer the user's follow-up questions about this specific audit directly and specifically, ` +
+    `citing the numbers above where relevant. Keep answers concise — 2-4 sentences unless the ` +
+    `question genuinely requires more. You have no tools available for this — you already have ` +
+    `everything you need in the audit above.`;
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    ...history.map((m) => ({ role: m.role, content: m.content }) as OpenAI.Chat.ChatCompletionMessageParam),
+    { role: "user", content: question },
+  ];
+
+  const response = await client.chat.completions.create({
+    model: MODEL,
+    messages,
+    temperature: 0.3,
+  });
+
+  return response.choices[0].message.content || "I don't have a response for that — try rephrasing?";
 }

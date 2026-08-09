@@ -34,3 +34,5 @@ export type AgentEvent =
   | { type: "tool_result"; name: string; result: unknown }
   | { type: "final"; findings: Findings }
   | { type: "error"; message: string };
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };

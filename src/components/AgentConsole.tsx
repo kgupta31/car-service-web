@@ -20,6 +20,7 @@ import {
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
 import { VehicleIcon } from "@/components/VehicleIcon";
+import { FollowupChat } from "@/components/FollowupChat";
 
 type TraceLine = { id: number; label: string };
 
@@ -522,6 +523,8 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
           })}
         </div>
       </div>
+
+      <FollowupChat findings={findings} />
     </motion.div>
   );
 }

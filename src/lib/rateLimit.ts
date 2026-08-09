@@ -7,10 +7,15 @@
  * casual scripted abuse of a shared, rate-limited upstream (Groq) API key
  * — not enforcing precise quotas. Swap for a durable store (e.g. Upstash
  * Redis) if traffic grows enough to need a real guarantee.
+ *
+ * Shared across /api/agent (audits) and /api/agent/followup (chat) by
+ * design — both hit the same Groq key, so one budget per caller is the
+ * point. Sized to comfortably cover one audit plus a few follow-ups per
+ * minute without feeling stingy.
  */
 
 const WINDOW_MS = 60_000;
-const MAX_REQUESTS = 5;
+const MAX_REQUESTS = 10;
 const SWEEP_INTERVAL = 200;
 
 const requestLog = new Map<string, number[]>();
