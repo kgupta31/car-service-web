@@ -130,8 +130,13 @@ function fallbackSchedule(make: string, model: string): ScheduleResult {
   return {
     make,
     model,
-    exact_match: !!exact,
-    source: exact ? "built-in table" : "generic estimate (not model-specific)",
+    // Always false here, even for the hand-entered table: exact_match:true is
+    // reserved for schedules we actually found and can cite (see
+    // searchMaintenanceSchedule). Otherwise a transient search failure for a
+    // hardcoded model would render the same "real, cited" badge as a genuine
+    // result, and get permanently cached as if it had been researched.
+    exact_match: false,
+    source: exact ? "built-in table (not researched)" : "generic estimate (not model-specific)",
     schedule: exact ?? GENERIC_SCHEDULE,
   };
 }
@@ -212,8 +217,13 @@ async function searchMaintenanceSchedule(
 
     if (schedule.length === 0) return null;
 
+    // Only accept http(s) URLs — these strings come from a web-search-augmented
+    // model and get rendered as clickable anchor hrefs, so a non-http scheme
+    // (e.g. javascript:) must never reach the client.
     const sources = Array.isArray(parsed.sources)
-      ? parsed.sources.filter((s: unknown): s is string => typeof s === "string")
+      ? parsed.sources.filter(
+          (s: unknown): s is string => typeof s === "string" && /^https?:\/\//i.test(s)
+        )
       : [];
 
     return {
