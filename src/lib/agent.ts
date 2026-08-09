@@ -48,7 +48,15 @@ has proposed, you must:
    — say by how much in the explanation), or "not_on_schedule" (not on the manufacturer schedule at
    all — the most likely padding).
 5. Be direct and specific with numbers. This is a tool for someone about to spend real money.
-6. Finish by calling present_findings with the full structured result — this IS your final answer,
+6. If the user described their driving conditions, judge whether that qualifies as "severe duty"
+   under common manufacturer definitions — frequent towing/hauling, dusty or off-road conditions,
+   extensive idling or very short trips (under ~10 minutes), extreme heat or cold, or heavy
+   stop-and-go traffic. If it qualifies, say so explicitly and note that routine intervals
+   (oil changes, fluid services) are commonly halved under severe-duty schedules — mention this
+   in the summary and set dutyClassification to "severe" with a one-sentence dutyReason. If no
+   driving-condition info was given, or it doesn't meet any severe-duty criteria, set
+   dutyClassification to "normal".
+7. Finish by calling present_findings with the full structured result — this IS your final answer,
    do not also write a text response after it. Include a concise plain-English summary sentence.`;
 
 const PRESENT_FINDINGS_TOOL = {
@@ -100,6 +108,8 @@ const PRESENT_FINDINGS_TOOL = {
           },
         },
         summary: { type: "string" },
+        dutyClassification: { type: "string", enum: ["normal", "severe"] },
+        dutyReason: { type: "string" },
       },
       required: ["vehicle", "mileage", "scheduleSource", "exactMatch", "items", "quoteVerdicts", "summary"],
     },
