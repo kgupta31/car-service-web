@@ -98,7 +98,10 @@ export async function getRecalls(
     if (!res.ok) return { count: 0, recalls: [], error: `HTTP ${res.status}` };
 
     const data = await res.json();
-    const results = Array.isArray(data?.results) ? data.results : [];
+    const rawResults = Array.isArray(data?.results) ? data.results : [];
+    // Guard against a structurally-absent entry (not just wrong-typed), which
+    // would otherwise throw inside .map() and discard the whole result set.
+    const results = rawResults.filter((r: unknown) => r && typeof r === "object");
 
     const recalls: RecallItem[] = results.slice(0, MAX_RECALLS).map((r: Record<string, unknown>) => ({
       component: typeof r.Component === "string" ? r.Component : "Unspecified",
@@ -107,6 +110,10 @@ export async function getRecalls(
       campaignNumber: typeof r.NHTSACampaignNumber === "string" ? r.NHTSACampaignNumber : "",
     }));
 
+    // count and recalls.length can diverge above MAX_RECALLS — the UI shows
+    // "N open recalls" using count while only listing MAX_RECALLS detail
+    // cards, so it must say so rather than silently implying that's the full
+    // list. See the "showing top N" copy in AgentConsole.tsx.
     return { count: results.length, recalls };
   } catch (e) {
     return { count: 0, recalls: [], error: (e as Error).message };

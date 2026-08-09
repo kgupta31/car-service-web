@@ -682,6 +682,11 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
             </a>
             .
           </p>
+          {recalls.count > recalls.items.length && (
+            <p className="text-[11px] text-white/30 mb-3">
+              Showing the {recalls.items.length} most recent of {recalls.count} — see all at NHTSA.
+            </p>
+          )}
           <div className="space-y-2.5">
             {recalls.items.map((r, i) => (
               <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
