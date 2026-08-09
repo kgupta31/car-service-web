@@ -73,6 +73,7 @@ export default function AgentConsole() {
   const [error, setError] = useState<string | null>(null);
   const [pastAudits, setPastAudits] = useState<AuditRecord[]>([]);
   const traceIdRef = useRef(0);
+  const quoteImageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
@@ -82,7 +83,9 @@ export default function AgentConsole() {
   const vinValid = vin.trim().length === 17;
   const manualValid =
     /^\d{4}$/.test(manualYear.trim()) && manualMake.trim().length > 0 && manualModel.trim().length > 0;
-  const canSubmit = mode === "vin" ? vinValid : manualValid;
+  const vehicleValid = mode === "vin" ? vinValid : manualValid;
+  const photoModeReady = quoteMode !== "photo" || (Boolean(quoteImage) && !compressingImage);
+  const canSubmit = vehicleValid && photoModeReady;
 
   async function handleQuoteImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -97,6 +100,9 @@ export default function AgentConsole() {
       setQuoteImage(null);
     } finally {
       setCompressingImage(false);
+      // Reset so re-selecting the same file (e.g. after "Remove") still fires onChange —
+      // browsers skip the event if the input's value string is unchanged.
+      if (quoteImageInputRef.current) quoteImageInputRef.current.value = "";
     }
   }
 
@@ -364,7 +370,13 @@ export default function AgentConsole() {
                 <label className="inline-flex items-center gap-2 text-xs text-white/60 cursor-pointer">
                   <ImageIcon className="size-4 text-accent" />
                   Choose a photo of your quote
-                  <input type="file" accept="image/*" onChange={handleQuoteImageChange} className="hidden" />
+                  <input
+                    ref={quoteImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleQuoteImageChange}
+                    className="hidden"
+                  />
                 </label>
                 {compressingImage && <p className="text-xs text-white/40 mt-2">Processing image...</p>}
                 {quoteImageError && <p className="text-xs text-danger mt-2">{quoteImageError}</p>}
@@ -377,7 +389,10 @@ export default function AgentConsole() {
                     />
                     <button
                       type="button"
-                      onClick={() => setQuoteImage(null)}
+                      onClick={() => {
+                        setQuoteImage(null);
+                        if (quoteImageInputRef.current) quoteImageInputRef.current.value = "";
+                      }}
                       className="inline-flex items-center gap-1 text-xs text-white/40 hover:text-white/70 transition"
                     >
                       <X className="size-3.5" />
@@ -422,6 +437,9 @@ export default function AgentConsole() {
             </>
           )}
         </button>
+        {quoteMode === "photo" && !photoModeReady && !compressingImage && (
+          <p className="mt-2 text-[11px] text-white/30">Choose a photo of your quote to continue.</p>
+        )}
       </form>
 
       <AnimatePresence>
