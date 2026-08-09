@@ -22,6 +22,7 @@ import {
   MapPin,
   Search,
   ExternalLink,
+  ShieldAlert,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
@@ -594,6 +595,7 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
     transcribedItems,
     priceAssessment,
     scheduleSources,
+    recalls,
   } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -658,6 +660,50 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
         <div className="text-[11px] uppercase tracking-wider text-white/40 mb-2">Bottom line</div>
         <p className="text-white/90 leading-relaxed">{summary}</p>
       </div>
+
+      {/* Open recalls — safety-relevant and free to fix, so it outranks pricing */}
+      {recalls && recalls.count > 0 && (
+        <div className="glass rounded-2xl p-6 border-l-2 border-l-danger/50">
+          <div className="flex items-center gap-2 text-sm font-semibold mb-2">
+            <ShieldAlert className="size-4 text-danger" />
+            {recalls.count} open recall{recalls.count === 1 ? "" : "s"} reported for this model
+          </div>
+          <p className="text-xs text-white/50 leading-relaxed mb-4">
+            Recall repairs are <span className="text-white/80">free at any dealer</span>. This lookup
+            is by year/make/model, so it may not apply to every car built that year —{" "}
+            <a
+              href="https://www.nhtsa.gov/recalls"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline inline-flex items-center gap-1"
+            >
+              confirm with your VIN at NHTSA
+              <ExternalLink className="size-3" />
+            </a>
+            .
+          </p>
+          <div className="space-y-2.5">
+            {recalls.items.map((r, i) => (
+              <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-medium text-sm">{r.component}</div>
+                  {r.campaignNumber && (
+                    <span className="shrink-0 text-[11px] text-white/30 font-mono">
+                      {r.campaignNumber}
+                    </span>
+                  )}
+                </div>
+                {r.summary && (
+                  <p className="text-xs text-white/50 mt-1.5 leading-relaxed">{r.summary}</p>
+                )}
+                {r.remedy && (
+                  <p className="text-xs text-ok/70 mt-1.5 leading-relaxed">Remedy: {r.remedy}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* What we read from the photo, if one was uploaded */}
       {transcribedItems && transcribedItems.length > 0 && (

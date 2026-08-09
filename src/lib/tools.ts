@@ -5,7 +5,7 @@
  * CarMD (or similar) API call later without touching the agent loop.
  */
 
-import type { ItemStatus } from "./types";
+import type { ItemStatus, RecallItem } from "./types";
 
 export type MaintenanceItem = {
   service: string;
@@ -71,6 +71,46 @@ export async function vinDecode(vin: string): Promise<VinDecodeResult> {
   }
 
   return decoded;
+}
+
+export type RecallResult = {
+  count: number;
+  recalls: RecallItem[];
+  error?: string;
+};
+
+const MAX_RECALLS = 5;
+
+// NHTSA's free recalls API. Note: it only accepts make/model/modelYear —
+// passing a VIN returns zero results — so these are model-level recalls that
+// may not apply to every production batch. The UI must say so.
+export async function getRecalls(
+  make: string,
+  model: string,
+  year: string
+): Promise<RecallResult> {
+  const url =
+    `https://api.nhtsa.gov/recalls/recallsByVehicle?make=${encodeURIComponent(make)}` +
+    `&model=${encodeURIComponent(model)}&modelYear=${encodeURIComponent(year)}`;
+
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return { count: 0, recalls: [], error: `HTTP ${res.status}` };
+
+    const data = await res.json();
+    const results = Array.isArray(data?.results) ? data.results : [];
+
+    const recalls: RecallItem[] = results.slice(0, MAX_RECALLS).map((r: Record<string, unknown>) => ({
+      component: typeof r.Component === "string" ? r.Component : "Unspecified",
+      summary: typeof r.Summary === "string" ? r.Summary : "",
+      remedy: typeof r.Remedy === "string" ? r.Remedy : "",
+      campaignNumber: typeof r.NHTSACampaignNumber === "string" ? r.NHTSACampaignNumber : "",
+    }));
+
+    return { count: results.length, recalls };
+  } catch (e) {
+    return { count: 0, recalls: [], error: (e as Error).message };
+  }
 }
 
 // MOCKED — small hand-entered table for a handful of common models, plus a
@@ -310,6 +350,24 @@ export const TOOL_SCHEMAS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "nhtsa_recalls",
+      description:
+        "Look up open safety recalls for a vehicle from NHTSA's free database. Recall repairs " +
+        "are free at any dealer, so always call this once you know the year, make, and model.",
+      parameters: {
+        type: "object",
+        properties: {
+          make: { type: "string", description: "Vehicle make, e.g. 'Hyundai'." },
+          model: { type: "string", description: "Vehicle model, e.g. 'Elantra'." },
+          year: { type: "string", description: "Model year, e.g. '2022'." },
+        },
+        required: ["make", "model", "year"],
+      },
+    },
+  },
 ];
 
 export async function runTool(name: string, input: Record<string, unknown>): Promise<unknown> {
@@ -323,6 +381,9 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
         input.model as string,
         input.year as string | undefined
       );
+    }
+    if (name === "nhtsa_recalls") {
+      return await getRecalls(input.make as string, input.model as string, input.year as string);
     }
     return { error: `Unknown tool: ${name}` };
   } catch (e) {

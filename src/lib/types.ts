@@ -24,6 +24,18 @@ export type PriceAssessment = {
   sources: string[];
 };
 
+export type RecallItem = {
+  component: string;
+  summary: string;
+  remedy: string;
+  campaignNumber: string;
+};
+
+export type RecallSummary = {
+  count: number;
+  items: RecallItem[];
+};
+
 export type Findings = {
   vehicle: { year: string; make: string; model: string; trim?: string };
   mileage: number;
@@ -38,6 +50,7 @@ export type Findings = {
   transcribedItems?: string[];
   priceAssessment?: PriceAssessment;
   scheduleSources?: string[];
+  recalls?: RecallSummary;
 };
 
 export type AgentEvent =

@@ -15,7 +15,7 @@
 
 import OpenAI from "openai";
 import { TOOL_SCHEMAS, runTool, computeScheduleItemStatus } from "./tools";
-import type { ScheduleResult } from "./tools";
+import type { ScheduleResult, RecallResult } from "./tools";
 import type { Findings, FindingsItem, AgentEvent, ChatMessage, PriceAssessment } from "./types";
 
 export type { Findings, AgentEvent } from "./types";
@@ -60,8 +60,12 @@ has proposed, you must:
    and give a verdict: "justified" (due/overdue per schedule), "premature" (on schedule, not due yet
    — say by how much in the explanation), or "not_on_schedule" (not on the manufacturer schedule at
    all — the most likely padding).
-5. Be direct and specific with numbers. This is a tool for someone about to spend real money.
-6. If the user described their driving conditions, judge whether that qualifies as "severe duty"
+5. Call nhtsa_recalls with the year, make, and model to check for open safety recalls. Recall
+   repairs are free at any dealer, so this matters to the user regardless of their quote. If any
+   are found, mention them in the summary — but describe them as recalls reported for this
+   year/make/model, NOT as confirmed for their specific car (the lookup is not VIN-exact).
+6. Be direct and specific with numbers. This is a tool for someone about to spend real money.
+7. If the user described their driving conditions, judge whether that qualifies as "severe duty"
    under common manufacturer definitions — frequent towing/hauling, dusty or off-road conditions,
    extensive idling or very short trips (under ~10 minutes), extreme heat or cold, or heavy
    stop-and-go traffic. If it qualifies, say so explicitly and note that routine intervals
@@ -69,18 +73,18 @@ has proposed, you must:
    in the summary and set dutyClassification to "severe" with a one-sentence dutyReason. If no
    driving-condition info was given, or it doesn't meet any severe-duty criteria, set
    dutyClassification to "normal".
-7. If ANY quote item's verdict is "premature" or "not_on_schedule", draft a short, polite,
+8. If ANY quote item's verdict is "premature" or "not_on_schedule", draft a short, polite,
    specific message the user could say or send to the shop pushing back on it — cite the exact
    manufacturer-schedule numbers (e.g. "My schedule shows transmission service at 60,000 miles;
    I'm at 32,000, so this is premature by 28,000 miles — can you clarify what's prompting it
    now?"). Put this in disputeDraft. If every quote item is "justified" (or no quote was given),
    leave disputeDraft out entirely.
-8. If the user's message includes prior audit history for this vehicle, check whether any
+9. If the user's message includes prior audit history for this vehicle, check whether any
    currently-quoted item was already flagged as "premature" or "not_on_schedule" in a past audit
    at a similar mileage (within ~2,000 miles). If so, explicitly call this out as likely duplicate
    billing in the summary — the same or a different shop may be re-quoting something already
    flagged.
-9. Finish by calling present_findings with the full structured result — this IS your final answer,
+10. Finish by calling present_findings with the full structured result — this IS your final answer,
    do not also write a text response after it. Include a concise plain-English summary sentence.`;
 
 const PRESENT_FINDINGS_TOOL = {
@@ -322,6 +326,7 @@ export async function* runAgent(
   const tools = [...TOOL_SCHEMAS, PRESENT_FINDINGS_TOOL];
   const MAX_TURNS = 8;
   let lastSchedule: ScheduleResult | null = null;
+  let lastRecalls: RecallResult | null = null;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let response;
@@ -381,6 +386,12 @@ export async function* runAgent(
           findings.transcribedItems = transcribedItems;
         }
 
+        // Recall data comes straight from NHTSA, not the model — never let the
+        // model paraphrase or invent safety recalls.
+        if (lastRecalls && lastRecalls.count > 0) {
+          findings.recalls = { count: lastRecalls.count, items: lastRecalls.recalls };
+        }
+
         // Provenance comes from the tool result, not the model, so the UI can be
         // honest about whether this was a real researched schedule or a fallback.
         if (lastSchedule) {
@@ -417,6 +428,9 @@ export async function* runAgent(
 
       if (tc.function.name === "get_maintenance_schedule") {
         lastSchedule = result as ScheduleResult;
+      }
+      if (tc.function.name === "nhtsa_recalls") {
+        lastRecalls = result as RecallResult;
       }
 
       messages.push({
