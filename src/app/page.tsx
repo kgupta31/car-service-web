@@ -1,9 +1,65 @@
 import AgentConsole from "@/components/AgentConsole";
 import { ShieldCheck, Zap, GitBranch } from "lucide-react";
+import { SITE_URL, SITE_DESCRIPTION } from "@/lib/site";
+
+const FAQ_ITEMS = [
+  {
+    q: "How do I know if a car repair is actually necessary?",
+    a: "Compare it against your manufacturer's maintenance schedule at your exact mileage. If a service isn't due yet — or isn't on the schedule at all — it's very likely padding. ServiceAudit Agent does this automatically: give it your VIN (or year/make/model) and mileage, paste in whatever a shop quoted you, and it tells you which items are justified, premature, or not on the schedule.",
+  },
+  {
+    q: "How can I tell if a dealership is upselling me on maintenance?",
+    a: "The biggest red flag is a service pushed well before its real interval — for example a transmission flush at 30,000 miles when the manufacturer schedule calls for it at 60,000. The FTC specifically recommends checking any shop-proposed service against your owner's manual before agreeing to it.",
+  },
+  {
+    q: "Where do I find my car's real manufacturer maintenance schedule?",
+    a: "It's in your owner's manual, but most people don't have it handy. ServiceAudit Agent looks it up for you from your VIN or year/make/model — no manual required.",
+  },
+  {
+    q: "Is a service due if it's not listed in my owner's manual?",
+    a: "Almost never. If a shop recommends something that isn't on your manufacturer's schedule at all, ask what specific inspection or symptom justifies it right now — 'not on schedule' is the single strongest signal of unnecessary upselling.",
+  },
+  {
+    q: "What should I ask before approving a repair?",
+    a: "Ask two things: is this listed in my maintenance schedule at my current mileage, and if not, what test or inspection shows I need it now? A reputable shop can answer both specifically.",
+  },
+  {
+    q: "Is ServiceAudit Agent free?",
+    a: "Yes — it runs on a free, open-weight AI model and doesn't require signup.",
+  },
+];
 
 export default function Home() {
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ_ITEMS.map((item) => ({
+      "@type": "Question",
+      name: item.q,
+      acceptedAnswer: { "@type": "Answer", text: item.a },
+    })),
+  };
+
+  const appJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: "ServiceAudit Agent",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    applicationCategory: "UtilitiesApplication",
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  };
+
   return (
     <main className="relative min-h-screen overflow-hidden">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(appJsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
       {/* Background layers */}
       <div className="absolute inset-0 grid-bg" />
       <div className="absolute inset-0 noise" />
@@ -37,9 +93,10 @@ export default function Home() {
             <span className="text-gradient">actually needs.</span>
           </h1>
           <p className="mt-5 text-white/50 text-base sm:text-lg leading-relaxed max-w-xl mx-auto">
-            Give it your VIN and mileage. The agent decodes your vehicle, pulls the
-            real maintenance schedule, and — if a shop already sent you a quote —
-            tells you exactly what&apos;s justified and what&apos;s padding.
+            Got a repair quote from a dealer or shop? Give the agent your VIN and
+            mileage — it pulls your car&apos;s real manufacturer maintenance schedule
+            and tells you exactly which items are actually due, which are premature,
+            and which aren&apos;t on the schedule at all.
           </p>
         </section>
 
@@ -63,6 +120,21 @@ export default function Home() {
               <Zap className="size-4 text-accent shrink-0" />
               Runs on an open-weight model, free to operate
             </div>
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="max-w-3xl mx-auto px-6 pb-24">
+          <h2 className="text-2xl font-semibold tracking-tight text-center mb-10">
+            Frequently asked questions
+          </h2>
+          <div className="space-y-6">
+            {FAQ_ITEMS.map((item) => (
+              <div key={item.q} className="glass rounded-2xl p-6">
+                <h3 className="text-sm font-semibold mb-2">{item.q}</h3>
+                <p className="text-sm text-white/50 leading-relaxed">{item.a}</p>
+              </div>
+            ))}
           </div>
         </section>
       </div>

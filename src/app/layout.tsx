@@ -1,12 +1,33 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { SITE_URL, SITE_TITLE, SITE_DESCRIPTION } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "ServiceAudit Agent — AI Car Service Advisor",
-  description:
-    "An AI agent that checks your VIN and mileage against the manufacturer maintenance schedule to tell you what's actually due — before you pay a dealership.",
+  metadataBase: new URL(SITE_URL),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  keywords: [
+    "is this car repair necessary",
+    "am I being overcharged for car repair",
+    "dealer maintenance upsell",
+    "car maintenance schedule by VIN",
+    "check dealer repair quote",
+    "manufacturer maintenance schedule lookup",
+  ],
   icons: {
     icon: "/logo.svg",
+  },
+  openGraph: {
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    siteName: "ServiceAudit Agent",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 };
 
