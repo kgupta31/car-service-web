@@ -14,6 +14,8 @@ import {
   Sparkles,
   ArrowRight,
   Wrench,
+  Copy,
+  Check,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
@@ -369,8 +371,20 @@ export default function AgentConsole() {
 }
 
 function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km" }) {
-  const { vehicle, mileage, items, quoteVerdicts, summary, exactMatch, scheduleSource } = findings;
+  const { vehicle, mileage, items, quoteVerdicts, summary, exactMatch, scheduleSource, disputeDraft } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copyDisputeDraft() {
+    if (!disputeDraft) return;
+    try {
+      await navigator.clipboard.writeText(disputeDraft);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    setTimeout(() => setCopyState("idle"), 2000);
+  }
 
   return (
     <motion.div
@@ -448,6 +462,29 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Dispute draft, if the model produced one */}
+      {disputeDraft && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <FileText className="size-4 text-accent" />
+              What to say
+            </div>
+            <button
+              type="button"
+              onClick={copyDisputeDraft}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/10 transition"
+            >
+              {copyState === "copied" && <Check className="size-3.5 text-ok" />}
+              {copyState === "failed" && <AlertTriangle className="size-3.5 text-danger" />}
+              {copyState === "idle" && <Copy className="size-3.5" />}
+              {copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy"}
+            </button>
+          </div>
+          <p className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap">{disputeDraft}</p>
         </div>
       )}
 
