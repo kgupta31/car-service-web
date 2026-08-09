@@ -244,6 +244,9 @@ export default function AgentConsole() {
                   className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
                 />
               </div>
+              <p className="sm:col-span-3 text-[11px] text-white/30">
+                Without a VIN, audit history is shared across any vehicle with this same year/make/model.
+              </p>
             </div>
           )}
 
