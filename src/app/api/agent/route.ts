@@ -5,6 +5,8 @@ import { checkRateLimit } from "@/lib/rateLimit";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const MAX_IMAGE_DATA_URL_LENGTH = 4_500_000;
+
 type VehicleInput = { vin: string } | { manual: { year: string; make: string; model: string } };
 
 function buildUserMessage(
@@ -12,7 +14,8 @@ function buildUserMessage(
   mileage: number,
   quoteItems: string[],
   drivingConditions: string,
-  historyNote: string
+  historyNote: string,
+  hasQuoteImage: boolean
 ): string {
   let msg: string;
   if ("vin" in vehicle) {
@@ -24,7 +27,11 @@ function buildUserMessage(
       `straight to looking up the maintenance schedule for this make/model. My current mileage is ${mileage}.\n`;
   }
 
-  if (quoteItems.length > 0) {
+  if (hasQuoteImage) {
+    msg +=
+      "\nI've attached a photo of my dealer/shop quote. Please read the line items directly from " +
+      "the photo and use those as the quoted services.";
+  } else if (quoteItems.length > 0) {
     const items = quoteItems.map((s) => `- ${s.trim()}`).join("\n");
     msg +=
       `\nMy dealership/shop has proposed the following services:\n${items}\n\n` +
@@ -61,7 +68,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { mode, vin, year, make, model, mileage, quote, drivingConditions, historyNote } = body as {
+  const { mode, vin, year, make, model, mileage, quote, drivingConditions, historyNote, quoteImage } = body as {
     mode?: "vin" | "manual";
     vin?: string;
     year?: string;
@@ -71,7 +78,23 @@ export async function POST(req: NextRequest) {
     quote?: string;
     drivingConditions?: string;
     historyNote?: string;
+    quoteImage?: string;
   };
+
+  if (quoteImage) {
+    if (typeof quoteImage !== "string" || !/^data:image\/(png|jpe?g|webp);base64,/.test(quoteImage)) {
+      return new Response(JSON.stringify({ error: "Invalid image format." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (quoteImage.length > MAX_IMAGE_DATA_URL_LENGTH) {
+      return new Response(JSON.stringify({ error: "Image is too large. Please use a smaller photo." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  }
 
   const resolvedMode = mode === "manual" ? "manual" : "vin";
 
@@ -115,7 +138,8 @@ export async function POST(req: NextRequest) {
     mileage,
     quoteItems,
     drivingConditions || "",
-    historyNote || ""
+    historyNote || "",
+    Boolean(quoteImage)
   );
 
   const encoder = new TextEncoder();
@@ -125,7 +149,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
       };
       try {
-        for await (const event of runAgent(userMessage)) {
+        for await (const event of runAgent(userMessage, quoteImage)) {
           send(event);
         }
       } catch (e) {

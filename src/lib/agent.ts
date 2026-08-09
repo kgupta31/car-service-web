@@ -24,6 +24,13 @@ const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 // A current Groq-hosted model that supports tool calling. Check
 // https://console.groq.com/docs/tool-use if this gets deprecated.
 const MODEL = "llama-3.3-70b-versatile";
+// Vision-capable model, used only when the request includes a quote photo.
+// Same Groq account/key as MODEL, no new vendor. As of this writing,
+// llama-4-scout is not available on this account/region — qwen3.6-27b is
+// the model actually offering both image input and tool-calling together.
+// Check https://console.groq.com/docs/vision for what's current if this
+// stops working.
+const VISION_MODEL = "qwen/qwen3.6-27b";
 
 const SYSTEM_PROMPT = `You are a car maintenance advisor agent. Your job is to protect the user
 from paying for services they don't yet need, while also flagging services that genuinely ARE
@@ -47,8 +54,12 @@ has proposed, you must:
    and give a verdict: "justified" (due/overdue per schedule), "premature" (on schedule, not due yet
    — say by how much in the explanation), or "not_on_schedule" (not on the manufacturer schedule at
    all — the most likely padding).
-5. Be direct and specific with numbers. This is a tool for someone about to spend real money.
-6. If the user described their driving conditions, judge whether that qualifies as "severe duty"
+5. If the user attached a photo of their quote, first read every visible line item (service names)
+   from the image as accurately as you can and put that list in transcribedItems. Use those
+   transcribed items as the dealer-proposed services for step 4 above. If the photo is too blurry
+   or unclear to read confidently, say so directly in the summary instead of guessing at line items.
+6. Be direct and specific with numbers. This is a tool for someone about to spend real money.
+7. If the user described their driving conditions, judge whether that qualifies as "severe duty"
    under common manufacturer definitions — frequent towing/hauling, dusty or off-road conditions,
    extensive idling or very short trips (under ~10 minutes), extreme heat or cold, or heavy
    stop-and-go traffic. If it qualifies, say so explicitly and note that routine intervals
@@ -56,19 +67,19 @@ has proposed, you must:
    in the summary and set dutyClassification to "severe" with a one-sentence dutyReason. If no
    driving-condition info was given, or it doesn't meet any severe-duty criteria, set
    dutyClassification to "normal".
-7. If ANY quote item's verdict is "premature" or "not_on_schedule", draft a short, polite,
+8. If ANY quote item's verdict is "premature" or "not_on_schedule", draft a short, polite,
    specific message the user could say or send to the shop pushing back on it — cite the exact
    manufacturer-schedule numbers (e.g. "My schedule shows transmission service at 60,000 miles;
    I'm at 32,000, so this is premature by 28,000 miles — can you clarify what's prompting it
    now?"). Put this in disputeDraft. If every quote item is "justified" (or no quote was given),
    leave disputeDraft out entirely.
-8. If the user's message includes prior audit history for this vehicle, check whether any
+9. If the user's message includes prior audit history for this vehicle, check whether any
    currently-quoted item was already flagged as "premature" or "not_on_schedule" in a past audit
    at a similar mileage (within ~2,000 miles). If so, explicitly call this out as likely duplicate
    billing in the summary — the same or a different shop may be re-quoting something already
    flagged.
-9. Finish by calling present_findings with the full structured result — this IS your final answer,
-   do not also write a text response after it. Include a concise plain-English summary sentence.`;
+10. Finish by calling present_findings with the full structured result — this IS your final answer,
+    do not also write a text response after it. Include a concise plain-English summary sentence.`;
 
 const PRESENT_FINDINGS_TOOL = {
   type: "function" as const,
@@ -92,7 +103,7 @@ const PRESENT_FINDINGS_TOOL = {
         },
         mileage: { type: "number" },
         scheduleSource: { type: "string" },
-        exactMatch: { type: "boolean" },
+        exactMatch: { type: ["boolean", "string"] },
         items: {
           type: "array",
           items: {
@@ -122,6 +133,7 @@ const PRESENT_FINDINGS_TOOL = {
         dutyClassification: { type: "string", enum: ["normal", "severe"] },
         dutyReason: { type: "string" },
         disputeDraft: { type: "string" },
+        transcribedItems: { type: "array", items: { type: "string" } },
       },
       required: ["vehicle", "mileage", "scheduleSource", "exactMatch", "items", "quoteVerdicts", "summary"],
     },
@@ -176,27 +188,45 @@ function fillMissingScheduleItems(
   return { ...findings, items: [...findings.items, ...added] };
 }
 
-export async function* runAgent(userMessage: string): AsyncGenerator<AgentEvent> {
+export async function* runAgent(userMessage: string, quoteImage?: string): AsyncGenerator<AgentEvent> {
   const client = getClient();
+
+  const firstUserMessage: OpenAI.Chat.ChatCompletionMessageParam = quoteImage
+    ? {
+        role: "user",
+        content: [
+          { type: "text", text: userMessage },
+          { type: "image_url", image_url: { url: quoteImage } },
+        ],
+      }
+    : { role: "user", content: userMessage };
 
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: userMessage },
+    firstUserMessage,
   ];
 
   const tools = [...TOOL_SCHEMAS, PRESENT_FINDINGS_TOOL];
   const MAX_TURNS = 8;
   let lastSchedule: ScheduleResult | null = null;
+  const modelToUse = quoteImage ? VISION_MODEL : MODEL;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     let response;
     try {
       response = await client.chat.completions.create({
-        model: MODEL,
+        model: modelToUse,
         messages,
         tools,
         tool_choice: "auto",
         temperature: 0.2,
+        // VISION_MODEL is a reasoning model; left unconstrained it burns its whole
+        // completion budget on chain-of-thought and never reaches the tool call
+        // (finish_reason: "length"). Disabling reasoning makes it answer directly.
+        // (Its other quirk — serializing booleans as "True"/"False" strings — is
+        // handled below, in the present_findings branch, since it's cheaper to
+        // coerce the value than to fight the model's tool-call serialization.)
+        ...(quoteImage ? { reasoning_effort: "none" as const } : {}),
       });
     } catch (e) {
       yield { type: "error", message: `Model request failed: ${(e as Error).message}` };
@@ -225,7 +255,14 @@ export async function* runAgent(userMessage: string): AsyncGenerator<AgentEvent>
       const args = JSON.parse(tc.function.arguments || "{}");
 
       if (tc.function.name === "present_findings") {
-        const findings = fillMissingScheduleItems(args as Findings, lastSchedule, (args as Findings).mileage);
+        // Some tool-calling models (e.g. qwen3.6-27b, used for the vision path) serialize
+        // booleans as Python-style "True"/"False" strings instead of JSON booleans. Coerce
+        // defensively so downstream code always sees a real boolean, regardless of model.
+        const rawFindings = args as Omit<Findings, "exactMatch"> & { exactMatch: boolean | string };
+        if (typeof rawFindings.exactMatch === "string") {
+          rawFindings.exactMatch = rawFindings.exactMatch.trim().toLowerCase() === "true";
+        }
+        const findings = fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage);
         yield { type: "final", findings };
         return;
       }
