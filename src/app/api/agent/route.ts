@@ -4,8 +4,19 @@ import { runAgent } from "@/lib/agent";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-function buildUserMessage(vin: string, mileage: number, quoteItems: string[]): string {
-  let msg = `My VIN is ${vin} and my current mileage is ${mileage}.\n`;
+type VehicleInput = { vin: string } | { manual: { year: string; make: string; model: string } };
+
+function buildUserMessage(vehicle: VehicleInput, mileage: number, quoteItems: string[]): string {
+  let msg: string;
+  if ("vin" in vehicle) {
+    msg = `My VIN is ${vehicle.vin} and my current mileage is ${mileage}.\n`;
+  } else {
+    const { year, make, model } = vehicle.manual;
+    msg =
+      `My vehicle is a ${year} ${make} ${model}. I don't have the VIN, so skip vin_decode and go ` +
+      `straight to looking up the maintenance schedule for this make/model. My current mileage is ${mileage}.\n`;
+  }
+
   if (quoteItems.length > 0) {
     const items = quoteItems.map((s) => `- ${s.trim()}`).join("\n");
     msg +=
@@ -22,14 +33,41 @@ function buildUserMessage(vin: string, mileage: number, quoteItems: string[]): s
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { vin, mileage, quote } = body as { vin?: string; mileage?: number; quote?: string };
+  const { mode, vin, year, make, model, mileage, quote } = body as {
+    mode?: "vin" | "manual";
+    vin?: string;
+    year?: string;
+    make?: string;
+    model?: string;
+    mileage?: number;
+    quote?: string;
+  };
 
-  if (!vin || typeof vin !== "string" || vin.trim().length !== 17) {
-    return new Response(JSON.stringify({ error: "Provide a full 17-character VIN." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+  const resolvedMode = mode === "manual" ? "manual" : "vin";
+
+  let vehicleInput: VehicleInput;
+
+  if (resolvedMode === "vin") {
+    if (!vin || typeof vin !== "string" || vin.trim().length !== 17) {
+      return new Response(JSON.stringify({ error: "Provide a full 17-character VIN." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    vehicleInput = { vin: vin.trim().toUpperCase() };
+  } else {
+    const yearTrimmed = (year || "").trim();
+    const makeTrimmed = (make || "").trim();
+    const modelTrimmed = (model || "").trim();
+    if (!/^\d{4}$/.test(yearTrimmed) || makeTrimmed.length === 0 || modelTrimmed.length === 0) {
+      return new Response(JSON.stringify({ error: "Provide year, make, and model." }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    vehicleInput = { manual: { year: yearTrimmed, make: makeTrimmed, model: modelTrimmed } };
   }
+
   if (typeof mileage !== "number" || mileage < 0) {
     return new Response(JSON.stringify({ error: "Provide a valid mileage." }), {
       status: 400,
@@ -42,7 +80,7 @@ export async function POST(req: NextRequest) {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const userMessage = buildUserMessage(vin.trim().toUpperCase(), mileage, quoteItems);
+  const userMessage = buildUserMessage(vehicleInput, mileage, quoteItems);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({

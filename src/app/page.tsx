@@ -15,7 +15,7 @@ export default function Home() {
         <header className="max-w-5xl mx-auto px-6 pt-8 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="size-7 rounded-lg bg-gradient-to-br from-accent to-accent-2" />
-            <span className="font-semibold tracking-tight">Overwatch</span>
+            <span className="font-semibold tracking-tight">ServiceAudit Agent</span>
           </div>
           <div className="flex items-center gap-2 text-[11px] text-white/40">
             <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">

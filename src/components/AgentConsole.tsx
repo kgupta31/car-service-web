@@ -16,6 +16,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
+import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
 
 type TraceLine = { id: number; label: string };
 
@@ -38,8 +39,13 @@ const VERDICT_META: Record<
 };
 
 export default function AgentConsole() {
+  const [mode, setMode] = useState<"vin" | "manual">("vin");
   const [vin, setVin] = useState("");
+  const [manualYear, setManualYear] = useState("");
+  const [manualMake, setManualMake] = useState("");
+  const [manualModel, setManualModel] = useState("");
   const [mileage, setMileage] = useState<string>("60000");
+  const [unit, setUnit] = useState<"mi" | "km">("mi");
   const [quote, setQuote] = useState("");
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
@@ -48,10 +54,13 @@ export default function AgentConsole() {
   const traceIdRef = useRef(0);
 
   const vinValid = vin.trim().length === 17;
+  const manualValid =
+    /^\d{4}$/.test(manualYear.trim()) && manualMake.trim().length > 0 && manualModel.trim().length > 0;
+  const canSubmit = mode === "vin" ? vinValid : manualValid;
 
   async function runAgent(e: React.FormEvent) {
     e.preventDefault();
-    if (!vinValid) return;
+    if (!canSubmit) return;
 
     setLoading(true);
     setTrace([]);
@@ -63,11 +72,24 @@ export default function AgentConsole() {
       setTrace((prev) => [...prev, { id: traceIdRef.current, label }]);
     };
 
+    const mileageMiles = unit === "km" ? kmToMiles(Number(mileage)) : Number(mileage);
+
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vin: vin.trim(), mileage: Number(mileage), quote }),
+        body: JSON.stringify(
+          mode === "vin"
+            ? { mode, vin: vin.trim(), mileage: mileageMiles, quote }
+            : {
+                mode,
+                year: manualYear.trim(),
+                make: manualMake.trim(),
+                model: manualModel.trim(),
+                mileage: mileageMiles,
+                quote,
+              }
+        ),
       });
 
       if (!res.ok || !res.body) {
@@ -121,36 +143,111 @@ export default function AgentConsole() {
         onSubmit={runAgent}
         className="glass rounded-2xl p-6 sm:p-8 shadow-2xl shadow-black/40"
       >
+        <div className="flex items-center gap-1.5 mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-1 w-fit">
+          <button
+            type="button"
+            onClick={() => setMode("vin")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              mode === "vin" ? "bg-accent/20 text-accent" : "text-white/40 hover:text-white/70"
+            }`}
+          >
+            By VIN
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("manual")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              mode === "manual" ? "bg-accent/20 text-accent" : "text-white/40 hover:text-white/70"
+            }`}
+          >
+            By Year/Make/Model
+          </button>
+        </div>
+
         <div className="grid sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
-              <Car className="size-4 text-accent" />
-              VIN <span className="text-white/30 font-normal">(17 characters)</span>
-            </label>
-            <input
-              value={vin}
-              onChange={(e) => setVin(e.target.value.toUpperCase())}
-              maxLength={17}
-              placeholder="4T1BF1FK5CU123456"
-              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 font-mono tracking-wider text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
-            />
-            <div className="mt-1.5 h-1 w-full rounded-full bg-white/5 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-accent to-accent-2 transition-all duration-300"
-                style={{ width: `${Math.min(100, (vin.trim().length / 17) * 100)}%` }}
+          {mode === "vin" ? (
+            <div className="sm:col-span-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
+                <Car className="size-4 text-accent" />
+                VIN <span className="text-white/30 font-normal">(17 characters)</span>
+              </label>
+              <input
+                value={vin}
+                onChange={(e) => setVin(e.target.value.toUpperCase())}
+                maxLength={17}
+                placeholder="4T1BF1FK5CU123456"
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 font-mono tracking-wider text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
               />
+              <div className="mt-1.5 h-1 w-full rounded-full bg-white/5 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-accent to-accent-2 transition-all duration-300"
+                  style={{ width: `${Math.min(100, (vin.trim().length / 17) * 100)}%` }}
+                />
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="sm:col-span-2 grid grid-cols-3 gap-3">
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
+                  <Car className="size-4 text-accent" />
+                  Year
+                </label>
+                <input
+                  value={manualYear}
+                  onChange={(e) => setManualYear(e.target.value)}
+                  maxLength={4}
+                  placeholder="2022"
+                  className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-white/70 mb-2 block">Make</label>
+                <input
+                  value={manualMake}
+                  onChange={(e) => setManualMake(e.target.value)}
+                  placeholder="Hyundai"
+                  className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-white/70 mb-2 block">Model</label>
+                <input
+                  value={manualModel}
+                  onChange={(e) => setManualModel(e.target.value)}
+                  placeholder="Elantra"
+                  className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
+                />
+              </div>
+            </div>
+          )}
 
           <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
-              <Gauge className="size-4 text-accent" />
-              Current mileage
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-white/70">
+                <Gauge className="size-4 text-accent" />
+                Current {unit === "mi" ? "mileage" : "kilometers"}
+              </label>
+              <div className="flex rounded-lg border border-white/10 overflow-hidden text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setUnit("mi")}
+                  className={`px-2 py-1 transition ${unit === "mi" ? "bg-accent/20 text-accent" : "text-white/40"}`}
+                >
+                  mi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUnit("km")}
+                  className={`px-2 py-1 transition ${unit === "km" ? "bg-accent/20 text-accent" : "text-white/40"}`}
+                >
+                  km
+                </button>
+              </div>
+            </div>
             <input
               type="number"
               min={0}
-              max={500000}
+              max={800000}
               value={mileage}
               onChange={(e) => setMileage(e.target.value)}
               className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition"
@@ -174,7 +271,7 @@ export default function AgentConsole() {
 
         <button
           type="submit"
-          disabled={!vinValid || loading}
+          disabled={!canSubmit || loading}
           className="mt-6 w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent to-accent-2 px-6 py-3 text-sm font-semibold text-black disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 active:scale-[0.98] transition"
         >
           {loading ? (
@@ -205,9 +302,9 @@ export default function AgentConsole() {
               Agent reasoning trace
             </div>
             <div className="space-y-1.5">
-              {trace.map((t) => (
+              {trace.map((t, i) => (
                 <motion.div
-                  key={t.id}
+                  key={`${t.id}-${i}`}
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="flex items-start gap-2"
@@ -241,13 +338,29 @@ export default function AgentConsole() {
         </motion.div>
       )}
 
-      <AnimatePresence>{findings && <ResultsView findings={findings} />}</AnimatePresence>
+      <AnimatePresence>
+        {findings && (
+          <ResultsView
+            key={`${findings.vehicle.year}-${findings.vehicle.make}-${findings.vehicle.model}`}
+            findings={findings}
+            unit={unit}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function ResultsView({ findings }: { findings: Findings }) {
+function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km" }) {
   const { vehicle, mileage, items, quoteVerdicts, summary, exactMatch, scheduleSource } = findings;
+  const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
+
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageUrl = `https://cdn.imagin.studio/getImage?customer=${
+    process.env.NEXT_PUBLIC_IMAGIN_CUSTOMER_KEY || "hello"
+  }&make=${encodeURIComponent(vehicle.make)}&modelFamily=${encodeURIComponent(
+    vehicle.model
+  )}&modelYear=${encodeURIComponent(vehicle.year)}&angle=01`;
 
   return (
     <motion.div
@@ -259,14 +372,25 @@ function ResultsView({ findings }: { findings: Findings }) {
       {/* Vehicle summary */}
       <div className="glass rounded-2xl p-6 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
-          <div className="size-12 rounded-xl bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center shrink-0">
-            <Car className="size-6 text-black" />
-          </div>
+          {!imageFailed ? (
+            <img
+              src={imageUrl}
+              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+              className="size-12 rounded-xl object-cover shrink-0 bg-white/5"
+              onError={() => setImageFailed(true)}
+            />
+          ) : (
+            <div className="size-12 rounded-xl bg-gradient-to-br from-accent to-accent-2 flex items-center justify-center shrink-0">
+              <Car className="size-6 text-black" />
+            </div>
+          )}
           <div>
             <div className="text-lg font-semibold">
               {vehicle.year} {vehicle.make} {vehicle.model} {vehicle.trim ? `· ${vehicle.trim}` : ""}
             </div>
-            <div className="text-sm text-white/40">{mileage.toLocaleString()} miles on the odometer</div>
+            <div className="text-sm text-white/40">
+              {displayMileage.toLocaleString()} {unit === "mi" ? "miles" : "km"} on the odometer
+            </div>
           </div>
         </div>
         {!exactMatch && (
@@ -343,7 +467,9 @@ function ResultsView({ findings }: { findings: Findings }) {
                   <span className={`text-[11px] px-2 py-0.5 rounded-full border ${meta.color}`}>
                     {meta.label}
                   </span>
-                  <span className="text-[11px] text-white/40">{item.milesInfo}</span>
+                  <span className="text-[11px] text-white/40">
+                    {unit === "km" ? convertMilesInfoToKm(item.milesInfo) : item.milesInfo}
+                  </span>
                 </div>
               </motion.div>
             );

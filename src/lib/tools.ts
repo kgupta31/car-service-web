@@ -5,6 +5,8 @@
  * CarMD (or similar) API call later without touching the agent loop.
  */
 
+import type { ItemStatus } from "./types";
+
 export type MaintenanceItem = {
   service: string;
   interval_miles: number;
@@ -127,6 +129,38 @@ export function getMaintenanceSchedule(make: string, model: string): ScheduleRes
     source: exact ? "mocked internal table" : "generic fallback (not model-specific)",
     schedule: exact ?? GENERIC_SCHEDULE,
   };
+}
+
+// Deterministic status calc for one schedule item at a given mileage. Used
+// as a fallback when the model's own findings.items is missing an entry —
+// see fillMissingScheduleItems in agent.ts.
+export function computeScheduleItemStatus(
+  intervalMiles: number,
+  mileage: number
+): { status: ItemStatus; milesInfo: string } {
+  // Defensive: all current mock intervals are positive constants, but this
+  // table is a placeholder for a future real API, so guard against bad data.
+  if (!Number.isFinite(intervalMiles) || intervalMiles <= 0) {
+    return { status: "not_due", milesInfo: "interval unknown" };
+  }
+  const lastMultiple = Math.floor(mileage / intervalMiles) * intervalMiles;
+  const nextMultiple = lastMultiple + intervalMiles;
+  const sinceLast = mileage - lastMultiple;
+  const untilNext = nextMultiple - mileage;
+
+  if (lastMultiple > 0 && sinceLast <= 1000) {
+    return {
+      status: "due_now",
+      milesInfo: `due now (passed at ${lastMultiple.toLocaleString()} mi)`,
+    };
+  }
+  if (untilNext <= 1000) {
+    return { status: "due_now", milesInfo: `due in ${untilNext.toLocaleString()} miles` };
+  }
+  if (lastMultiple > 0 && sinceLast > 1000) {
+    return { status: "overdue", milesInfo: `${sinceLast.toLocaleString()} miles overdue` };
+  }
+  return { status: "not_due", milesInfo: `due in ${untilNext.toLocaleString()} miles` };
 }
 
 // ---------------------------------------------------------------------------
