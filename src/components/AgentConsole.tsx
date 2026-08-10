@@ -22,10 +22,15 @@ import {
   MapPin,
   Search,
   ExternalLink,
+  ShieldAlert,
+  Hammer,
+  ListChecks,
+  Share2,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
 import { compressImageToDataUrl } from "@/lib/image";
+import { encodeFindings, decodeFindings } from "@/lib/share";
 import { VehicleIcon } from "@/components/VehicleIcon";
 import { FollowupChat } from "@/components/FollowupChat";
 import { PastAuditsList } from "@/components/PastAuditsList";
@@ -34,8 +39,11 @@ import {
   getVehicleHistory,
   saveAuditToHistory,
   summarizeHistoryForPrompt,
+  getCachedSchedule,
+  saveCachedSchedule,
   type AuditRecord,
 } from "@/lib/vehicleHistory";
+import type { ScheduleResult } from "@/lib/tools";
 
 type TraceLine = { id: number; label: string };
 
@@ -67,6 +75,12 @@ const PRICE_VERDICT_META: Record<
   unknown: { label: "Uncertain", color: "text-white/50 border-white/20 bg-white/5" },
 };
 
+const PRIORITY_META: Record<"safety" | "soon" | "can_wait", { label: string; color: string }> = {
+  safety: { label: "Do first — safety", color: "text-danger border-danger/30 bg-danger/10" },
+  soon: { label: "Soon", color: "text-warn border-warn/30 bg-warn/10" },
+  can_wait: { label: "Can wait", color: "text-ok border-ok/30 bg-ok/10" },
+};
+
 export default function AgentConsole() {
   const [mode, setMode] = useState<"vin" | "manual">("vin");
   const [vin, setVin] = useState("");
@@ -86,6 +100,7 @@ export default function AgentConsole() {
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
   const [findings, setFindings] = useState<Findings | null>(null);
+  const [isSharedView, setIsSharedView] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pastAudits, setPastAudits] = useState<AuditRecord[]>([]);
   const traceIdRef = useRef(0);
@@ -95,6 +110,19 @@ export default function AgentConsole() {
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
     setPastAudits(getVehicleHistory(identifier)?.audits ?? []);
   }, [mode, vin, manualYear, manualMake, manualModel]);
+
+  // A shared audit arrives as ?r=<compressed findings>. Render it read-only;
+  // never write someone else's car into this browser's vehicle history.
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("r");
+    if (!param) return;
+    decodeFindings(param).then((shared) => {
+      if (shared) {
+        setFindings(shared);
+        setIsSharedView(true);
+      }
+    });
+  }, []);
 
   const vinValid = vin.trim().length === 17;
   const manualValid =
@@ -139,6 +167,7 @@ export default function AgentConsole() {
     const mileageMiles = unit === "km" ? kmToMiles(Number(mileage)) : Number(mileage);
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
     const historyNote = summarizeHistoryForPrompt(getVehicleHistory(identifier));
+    const cachedSchedule = getCachedSchedule(identifier);
     const effectiveQuote = quoteMode === "photo" ? "" : quote;
     const effectiveQuoteImage = quoteMode === "photo" ? quoteImage || undefined : undefined;
     const parsedAmount = Number(amountQuoted);
@@ -163,6 +192,7 @@ export default function AgentConsole() {
                 quoteImage: effectiveQuoteImage,
                 amountQuoted: effectiveAmountQuoted,
                 zip: zip.trim(),
+                cachedSchedule,
               }
             : {
                 mode,
@@ -176,6 +206,7 @@ export default function AgentConsole() {
                 quoteImage: effectiveQuoteImage,
                 amountQuoted: effectiveAmountQuoted,
                 zip: zip.trim(),
+                cachedSchedule,
               }
         ),
       });
@@ -207,10 +238,15 @@ export default function AgentConsole() {
             const label =
               event.name === "vin_decode"
                 ? `Decoding VIN ${String(event.input.vin ?? "")}...`
-                : `Looking up maintenance schedule for ${event.input.make} ${event.input.model}...`;
+                : `Researching the real ${[event.input.year, event.input.make, event.input.model]
+                    .filter(Boolean)
+                    .join(" ")} maintenance schedule...`;
             pushTrace(label);
           } else if (event.type === "tool_result") {
             pushTrace(`✓ ${event.name} returned a result`);
+            if (event.name === "get_maintenance_schedule") {
+              saveCachedSchedule(identifier, event.result as ScheduleResult);
+            }
           } else if (event.type === "final") {
             pushTrace("✓ Compiling findings...");
             setFindings(event.findings);
@@ -242,6 +278,17 @@ export default function AgentConsole() {
 
   return (
     <div className="w-full max-w-3xl mx-auto">
+      {isSharedView && (
+        <div className="glass rounded-2xl mb-4 p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-xs text-white/60">You&apos;re viewing a shared audit.</div>
+          <a
+            href="/"
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            Run your own →
+          </a>
+        </div>
+      )}
       <PastAuditsList audits={pastAudits} />
       <form
         onSubmit={runAgent}
@@ -563,6 +610,7 @@ export default function AgentConsole() {
             key={`${findings.vehicle.year}-${findings.vehicle.make}-${findings.vehicle.model}`}
             findings={findings}
             unit={unit}
+            isSharedView={isSharedView}
           />
         )}
       </AnimatePresence>
@@ -570,7 +618,15 @@ export default function AgentConsole() {
   );
 }
 
-function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km" }) {
+function ResultsView({
+  findings,
+  unit,
+  isSharedView,
+}: {
+  findings: Findings;
+  unit: "mi" | "km";
+  isSharedView?: boolean;
+}) {
   const {
     vehicle,
     mileage,
@@ -582,6 +638,9 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
     disputeDraft,
     transcribedItems,
     priceAssessment,
+    scheduleSources,
+    recalls,
+    actionPlan,
   } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -595,6 +654,24 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
       setCopyState("failed");
     }
     setTimeout(() => setCopyState("idle"), 2000);
+  }
+
+  const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copyShareLink() {
+    const encoded = await encodeFindings(findings);
+    if (!encoded) {
+      setShareState("failed");
+      setTimeout(() => setShareState("idle"), 2000);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/?r=${encoded}`);
+      setShareState("copied");
+    } catch {
+      setShareState("failed");
+    }
+    setTimeout(() => setShareState("idle"), 2000);
   }
 
   return (
@@ -618,6 +695,16 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {!isSharedView && (
+            <button
+              type="button"
+              onClick={copyShareLink}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/10 transition"
+            >
+              <Share2 className="size-3.5" />
+              {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Couldn't share" : "Share"}
+            </button>
+          )}
           {findings.dutyClassification === "severe" && (
             <div
               className="text-xs px-3 py-1.5 rounded-full border border-warn/30 bg-warn/10 text-warn"
@@ -626,9 +713,16 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
               Severe-duty driving
             </div>
           )}
-          {!exactMatch && (
+          {exactMatch ? (
+            <div className="text-xs px-3 py-1.5 rounded-full border border-ok/30 bg-ok/10 text-ok">
+              Real manufacturer schedule
+              {scheduleSources && scheduleSources.length > 0
+                ? ` · ${scheduleSources.length} source${scheduleSources.length === 1 ? "" : "s"}`
+                : ""}
+            </div>
+          ) : (
             <div className="text-xs px-3 py-1.5 rounded-full border border-warn/30 bg-warn/10 text-warn">
-              Generic schedule estimate — not model-exact
+              Generic estimate — no model-specific schedule found
             </div>
           )}
         </div>
@@ -639,6 +733,55 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
         <div className="text-[11px] uppercase tracking-wider text-white/40 mb-2">Bottom line</div>
         <p className="text-white/90 leading-relaxed">{summary}</p>
       </div>
+
+      {/* Open recalls — safety-relevant and free to fix, so it outranks pricing */}
+      {recalls && recalls.count > 0 && (
+        <div className="glass rounded-2xl p-6 border-l-2 border-l-danger/50">
+          <div className="flex items-center gap-2 text-sm font-semibold mb-2">
+            <ShieldAlert className="size-4 text-danger" />
+            {recalls.count} open recall{recalls.count === 1 ? "" : "s"} reported for this model
+          </div>
+          <p className="text-xs text-white/50 leading-relaxed mb-4">
+            Recall repairs are <span className="text-white/80">free at any dealer</span>. This lookup
+            is by year/make/model, so it may not apply to every car built that year —{" "}
+            <a
+              href="https://www.nhtsa.gov/recalls"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-accent hover:underline inline-flex items-center gap-1"
+            >
+              confirm with your VIN at NHTSA
+              <ExternalLink className="size-3" />
+            </a>
+            .
+          </p>
+          {recalls.count > recalls.items.length && (
+            <p className="text-[11px] text-white/30 mb-3">
+              Showing the {recalls.items.length} most recent of {recalls.count} — see all at NHTSA.
+            </p>
+          )}
+          <div className="space-y-2.5">
+            {recalls.items.map((r, i) => (
+              <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-medium text-sm">{r.component}</div>
+                  {r.campaignNumber && (
+                    <span className="shrink-0 text-[11px] text-white/30 font-mono">
+                      {r.campaignNumber}
+                    </span>
+                  )}
+                </div>
+                {r.summary && (
+                  <p className="text-xs text-white/50 mt-1.5 leading-relaxed">{r.summary}</p>
+                )}
+                {r.remedy && (
+                  <p className="text-xs text-ok/70 mt-1.5 leading-relaxed">Remedy: {r.remedy}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* What we read from the photo, if one was uploaded */}
       {transcribedItems && transcribedItems.length > 0 && (
@@ -684,6 +827,13 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
                     </span>
                   </div>
                   <p className="text-xs text-white/50 mt-1.5 leading-relaxed">{qv.explanation}</p>
+                  {qv.diy && (
+                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-ok/30 bg-ok/10 px-2.5 py-1 text-[11px] text-ok">
+                      <Hammer className="size-3" />
+                      DIY-able · ~{qv.diy.partCostRange} part · {qv.diy.minutes} min
+                      <span className="text-ok/60">— {qv.diy.note}</span>
+                    </div>
+                  )}
                 </motion.div>
               );
             })}
@@ -754,12 +904,63 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
         </div>
       )}
 
+      {/* Prioritized action plan */}
+      {actionPlan && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center gap-2 text-sm font-semibold mb-3">
+            <ListChecks className="size-4 text-accent" />
+            Do this first
+          </div>
+          <p className="text-sm text-white/70 leading-relaxed mb-4">{actionPlan}</p>
+          <div className="space-y-2">
+            {(["safety", "soon"] as const).map((level) => {
+              const group = items.filter((it) => it.priority === level);
+              if (group.length === 0) return null;
+              return (
+                <div key={level} className="flex items-start gap-3 flex-wrap">
+                  <span
+                    className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border ${PRIORITY_META[level].color}`}
+                  >
+                    {PRIORITY_META[level].label}
+                  </span>
+                  <span className="text-xs text-white/60 leading-relaxed">
+                    {group.map((it) => it.service).join(", ")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Full schedule status */}
       <div className="glass rounded-2xl p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
           <div className="text-sm font-semibold">Manufacturer maintenance schedule</div>
           <div className="text-[11px] text-white/30">{scheduleSource}</div>
         </div>
+        {scheduleSources && scheduleSources.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1">
+            {scheduleSources.map((source, i) => (
+              <a
+                key={i}
+                href={source}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-accent transition"
+              >
+                <ExternalLink className="size-3" />
+                {(() => {
+                  try {
+                    return new URL(source).hostname.replace(/^www\./, "");
+                  } catch {
+                    return source;
+                  }
+                })()}
+              </a>
+            ))}
+          </div>
+        )}
         <div className="grid sm:grid-cols-2 gap-2.5">
           {items.map((item, i) => {
             const meta = STATUS_META[item.status];
@@ -783,6 +984,12 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
                     {unit === "km" ? convertMilesInfoToKm(item.milesInfo) : item.milesInfo}
                   </span>
                 </div>
+                {item.diy && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-ok/80">
+                    <Hammer className="size-3" />
+                    DIY ~{item.diy.partCostRange} · {item.diy.minutes} min
+                  </div>
+                )}
               </motion.div>
             );
           })}

@@ -1,17 +1,28 @@
 export type Verdict = "justified" | "premature" | "not_on_schedule";
 export type ItemStatus = "overdue" | "due_now" | "not_due";
 
+export type DiyInfo = {
+  partCostRange: string;
+  minutes: number;
+  note: string;
+};
+
+export type Priority = "safety" | "soon" | "can_wait";
+
 export type FindingsItem = {
   service: string;
   category: "routine" | "major";
   status: ItemStatus;
   milesInfo: string;
+  diy?: DiyInfo;
+  priority?: Priority;
 };
 
 export type QuoteVerdict = {
   item: string;
   verdict: Verdict;
   explanation: string;
+  diy?: DiyInfo;
 };
 
 export type DutyClassification = "normal" | "severe";
@@ -22,6 +33,18 @@ export type PriceAssessment = {
   verdict: PriceVerdict;
   explanation: string;
   sources: string[];
+};
+
+export type RecallItem = {
+  component: string;
+  summary: string;
+  remedy: string;
+  campaignNumber: string;
+};
+
+export type RecallSummary = {
+  count: number;
+  items: RecallItem[];
 };
 
 export type Findings = {
@@ -37,6 +60,9 @@ export type Findings = {
   disputeDraft?: string;
   transcribedItems?: string[];
   priceAssessment?: PriceAssessment;
+  scheduleSources?: string[];
+  recalls?: RecallSummary;
+  actionPlan?: string;
 };
 
 export type AgentEvent =
