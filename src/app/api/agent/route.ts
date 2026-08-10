@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { runAgent, transcribeQuoteImage } from "@/lib/agent";
 import type { ScheduleResult } from "@/lib/tools";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { isTrustedOrigin } from "@/lib/originCheck";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -75,6 +76,13 @@ function buildUserMessage(
 }
 
 export async function POST(req: NextRequest) {
+  if (!isTrustedOrigin(req)) {
+    return new Response(JSON.stringify({ error: "Forbidden." }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const { limited, retryAfterSeconds } = checkRateLimit(ip);
   if (limited) {

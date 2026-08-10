@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { runFollowup } from "@/lib/agent";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { isTrustedOrigin } from "@/lib/originCheck";
 import type { Findings, ChatMessage } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -15,6 +16,13 @@ const MAX_MESSAGE_LENGTH = 4000;
 const MAX_FINDINGS_JSON_LENGTH = 20_000;
 
 export async function POST(req: NextRequest) {
+  if (!isTrustedOrigin(req)) {
+    return new Response(JSON.stringify({ error: "Forbidden." }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const { limited, retryAfterSeconds } = checkRateLimit(ip);
   if (limited) {
