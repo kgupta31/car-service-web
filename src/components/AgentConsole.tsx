@@ -36,6 +36,7 @@ import { FollowupChat } from "@/components/FollowupChat";
 import { PastAuditsList } from "@/components/PastAuditsList";
 import {
   vehicleIdentifier,
+  historyIdentifier,
   getVehicleHistory,
   saveAuditToHistory,
   summarizeHistoryForPrompt,
@@ -107,9 +108,10 @@ export default function AgentConsole() {
   const quoteImageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
-    setPastAudits(getVehicleHistory(identifier)?.audits ?? []);
-  }, [mode, vin, manualYear, manualMake, manualModel]);
+    // History is VIN-only — year/make/model isn't a safe match since many
+    // people own the same model. See historyIdentifier in vehicleHistory.ts.
+    setPastAudits(getVehicleHistory(historyIdentifier(mode, vin))?.audits ?? []);
+  }, [mode, vin]);
 
   // A shared audit arrives as ?r=<compressed findings>. Render it read-only;
   // never write someone else's car into this browser's vehicle history.
@@ -165,8 +167,10 @@ export default function AgentConsole() {
     };
 
     const mileageMiles = unit === "km" ? kmToMiles(Number(mileage)) : Number(mileage);
+    // Schedule caching is safe to key by year/make/model (same manufacturer
+    // schedule for every unit); history is VIN-only — see historyIdentifier.
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
-    const historyNote = summarizeHistoryForPrompt(getVehicleHistory(identifier));
+    const historyNote = summarizeHistoryForPrompt(getVehicleHistory(historyIdentifier(mode, vin)));
     const cachedSchedule = getCachedSchedule(identifier);
     const effectiveQuote = quoteMode === "photo" ? "" : quote;
     const effectiveQuoteImage = quoteMode === "photo" ? quoteImage || undefined : undefined;
@@ -250,8 +254,9 @@ export default function AgentConsole() {
           } else if (event.type === "final") {
             pushTrace("✓ Compiling findings...");
             setFindings(event.findings);
-            saveAuditToHistory(identifier, event.findings);
-            setPastAudits(getVehicleHistory(identifier)?.audits ?? []);
+            const historyId = historyIdentifier(mode, vin);
+            saveAuditToHistory(historyId, event.findings);
+            setPastAudits(getVehicleHistory(historyId)?.audits ?? []);
             settled = true;
           } else if (event.type === "error") {
             setError(event.message);

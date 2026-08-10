@@ -18,9 +18,11 @@ const SCHEDULE_PREFIX = "serviceaudit:schedule:";
 const MAX_AUDITS_PER_VEHICLE = 10;
 const SCHEDULE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
-// A VIN identifies a vehicle uniquely; without one, year+make+model is the
-// best available proxy (imprecise across owners of the same model, but
-// this is a client-only convenience feature, not a source of truth).
+// For the SCHEDULE CACHE only. A manufacturer's published maintenance
+// schedule is identical across every unit of a given year/make/model, so
+// year+make+model is a perfectly valid cache key here even without a VIN —
+// unlike per-vehicle audit history (see historyIdentifier below), there's
+// no correctness risk from two different owners' cars sharing this key.
 export function vehicleIdentifier(
   mode: "vin" | "manual",
   vin: string,
@@ -37,6 +39,20 @@ export function vehicleIdentifier(
   const md = model.trim();
   if (!y || !mk || !md) return null;
   return `${y}|${mk}|${md}`.toUpperCase();
+}
+
+// For audit HISTORY and the "possible duplicate billing" cross-check —
+// unlike the schedule cache, these are about one specific car's past
+// quotes and mileage, and year+make+model is NOT a safe stand-in for that:
+// many people own the same year/make/model, so matching on it would show a
+// different physical vehicle's history (and could produce a false
+// duplicate-billing claim) as if it belonged to this one. Only a real VIN
+// uniquely identifies a vehicle, so history is VIN-only — manual mode
+// simply has no history feature.
+export function historyIdentifier(mode: "vin" | "manual", vin: string): string | null {
+  if (mode !== "vin") return null;
+  const trimmed = vin.trim().toUpperCase();
+  return trimmed.length === 17 ? trimmed : null;
 }
 
 function storageKey(identifier: string): string {
