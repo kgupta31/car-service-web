@@ -237,6 +237,10 @@ async function searchMaintenanceSchedule(
             content: `What is the manufacturer-recommended maintenance schedule for a ${vehicle}?`,
           },
         ],
+        // Generous — a truncated response just means graceful fallback to
+        // the hardcoded table (fallbackSchedule), not a crash, so this only
+        // needs to bound worst-case cost, not squeeze the common case.
+        max_tokens: 2000,
       }),
       signal: AbortSignal.timeout(20_000),
     });

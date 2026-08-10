@@ -280,6 +280,25 @@ function fillMissingQuoteVerdicts(
   return { ...findings, quoteVerdicts: [...findings.quoteVerdicts, ...added] };
 }
 
+// nhtsa_recalls results carry full remedy/summary paragraphs (~150-250 tokens
+// per recall, up to 5) that get resent to the model on every subsequent turn
+// once pushed into the message history — but the model only needs enough to
+// mention "N recalls reported" in the summary; findings.recalls is populated
+// straight from lastRecalls (the real NHTSA data), never from what the model
+// echoes back. Trim what's fed to the model; the client still gets the full
+// result via the yielded tool_result event, untouched.
+function toModelFacingToolResult(toolName: string, result: unknown): unknown {
+  if (toolName !== "nhtsa_recalls") return result;
+  const recalls = result as RecallResult;
+  return {
+    count: recalls.count,
+    recalls: recalls.recalls.map((r) => ({
+      component: r.component,
+      summary: r.summary.length > 150 ? `${r.summary.slice(0, 150)}…` : r.summary,
+    })),
+  };
+}
+
 const SAFETY_CRITICAL = /brake|tire|steer|suspension|headlight|taillight|wiper/;
 
 // The model assigns priority (it needs judgment), but a safety-critical item
@@ -332,6 +351,9 @@ export async function transcribeQuoteImage(quoteImage: string): Promise<string[]
         // VISION_MODEL is a reasoning model; left unconstrained it burns its whole
         // completion budget on chain-of-thought and never reaches a final answer.
         reasoning_effort: "none",
+        // A quote photo has at most a handful of line items — bounds cost and
+        // caps how much a pathological/adversarial image can generate.
+        max_tokens: 500,
       },
       // Bounded so a slow/hung vision call can't by itself threaten the route's
       // fixed maxDuration — a timeout just means "couldn't read the photo."
@@ -385,6 +407,9 @@ async function assessPriceReasonableness(
           },
           { role: "user", content: prompt },
         ],
+        // The output is a short verdict + explanation + a few URLs — bounds
+        // cost on this optional call.
+        max_tokens: 800,
       },
       // Bounded so this optional, best-effort call can never eat enough of the
       // route's fixed maxDuration to silently truncate the primary audit —
@@ -446,6 +471,11 @@ export async function* runAgent(
           tools,
           tool_choice: "auto",
           temperature: 0.2,
+          // Generous headroom above a realistic worst-case present_findings
+          // call (12 schedule items + up to 20 quote verdicts + prose fields
+          // is comfortably under 2,000 tokens) — bounds cost and runaway
+          // generation without risking truncating a legitimate response.
+          max_tokens: 3000,
         },
         // Bounded per call so a slow/hung turn can't by itself consume the
         // route's whole maxDuration — surfaces as a normal error instead of
@@ -476,7 +506,16 @@ export async function* runAgent(
       // allows a "custom" variant we never use, so narrow before touching .function.
       if (tc.type !== "function") continue;
 
-      const args = JSON.parse(tc.function.arguments || "{}");
+      let args: Record<string, unknown>;
+      try {
+        args = JSON.parse(tc.function.arguments || "{}");
+      } catch {
+        // A cut-off (e.g. hit max_tokens mid-JSON) or otherwise malformed
+        // tool call — surface as a normal error instead of crashing the
+        // stream with an uncaught exception.
+        yield { type: "error", message: "The model returned malformed tool-call arguments. Please try again." };
+        return;
+      }
 
       if (tc.function.name === "present_findings") {
         // Defensive: some models occasionally serialize booleans as "True"/"False"
@@ -553,7 +592,7 @@ export async function* runAgent(
       messages.push({
         role: "tool",
         tool_call_id: tc.id,
-        content: JSON.stringify(result),
+        content: JSON.stringify(toModelFacingToolResult(tc.function.name, result)),
       });
     }
   }
@@ -603,6 +642,9 @@ export async function runFollowup(
     model: MODEL,
     messages,
     temperature: 0.3,
+    // Answers are instructed to be 2-4 sentences "unless genuinely more" —
+    // bounds cost and caps a jailbreak attempt's output length.
+    max_tokens: 600,
   });
 
   return response.choices[0].message.content || "I don't have a response for that — try rephrasing?";
