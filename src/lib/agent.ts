@@ -216,6 +216,61 @@ function applyDiyFlags(findings: Findings): Findings {
   };
 }
 
+// Safety net: the system prompt instructs the model to give a verdict for
+// every dealer-quoted item, but nothing enforces that — observed live that
+// under the current (longer, multi-instruction) prompt the model sometimes
+// drops this step entirely, especially with only one quote item. Fill in
+// anything it dropped deterministically, same reasoning as
+// fillMissingScheduleItems: a quoted item silently vanishing is worse than a
+// computed verdict, since it's the app's core "don't get overcharged" promise.
+function fillMissingQuoteVerdicts(
+  findings: Findings,
+  quoteItems: string[],
+  schedule: ScheduleResult | null,
+  mileage: number
+): Findings {
+  if (quoteItems.length === 0) return findings;
+
+  const covered = findings.quoteVerdicts.map((qv) => normalizeServiceName(qv.item));
+  const missing = quoteItems.filter((qi) => {
+    const n = normalizeServiceName(qi);
+    return !covered.some((c) => c.includes(n) || n.includes(c));
+  });
+  if (missing.length === 0) return findings;
+
+  const added = missing.map((item): Findings["quoteVerdicts"][number] => {
+    const n = normalizeServiceName(item);
+    const scheduleMatch = schedule?.schedule.find((si) => {
+      const sn = normalizeServiceName(si.service);
+      return sn.includes(n) || n.includes(sn);
+    });
+
+    if (!scheduleMatch || !Number.isFinite(mileage)) {
+      return {
+        item,
+        verdict: "not_on_schedule",
+        explanation: "Not part of the manufacturer's published maintenance schedule for this vehicle.",
+      };
+    }
+
+    const { status, milesInfo } = computeScheduleItemStatus(scheduleMatch.interval_miles, mileage);
+    if (status === "not_due") {
+      return {
+        item,
+        verdict: "premature",
+        explanation: `Manufacturer schedule shows this ${milesInfo} — premature at the current mileage.`,
+      };
+    }
+    return {
+      item,
+      verdict: "justified",
+      explanation: `Manufacturer schedule shows this is ${milesInfo}.`,
+    };
+  });
+
+  return { ...findings, quoteVerdicts: [...findings.quoteVerdicts, ...added] };
+}
+
 const SAFETY_CRITICAL = /brake|tire|steer|suspension|headlight|taillight|wiper/;
 
 // The model assigns priority (it needs judgment), but a safety-critical item
@@ -354,7 +409,8 @@ export async function* runAgent(
   transcribedItems?: string[],
   amountQuoted?: number,
   zip?: string,
-  cachedSchedule?: ScheduleResult
+  cachedSchedule?: ScheduleResult,
+  quoteItems?: string[]
 ): AsyncGenerator<AgentEvent> {
   const client = getClient();
 
@@ -420,7 +476,12 @@ export async function* runAgent(
         }
         const findings = enforceSafetyPriority(
           applyDiyFlags(
-            fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage)
+            fillMissingQuoteVerdicts(
+              fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage),
+              quoteItems || [],
+              lastSchedule,
+              rawFindings.mileage
+            )
           )
         );
 

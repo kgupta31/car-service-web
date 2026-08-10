@@ -201,7 +201,8 @@ export async function POST(req: NextRequest) {
           transcribedItems,
           validAmountQuoted,
           trimmedZip,
-          validCachedSchedule
+          validCachedSchedule,
+          quoteItems
         )) {
           send(event);
         }
