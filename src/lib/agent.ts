@@ -301,17 +301,28 @@ function toModelFacingToolResult(toolName: string, result: unknown): unknown {
 
 // Same failure mode as fillMissingQuoteVerdicts: under a long, multi-instruction
 // prompt the model sometimes returns present_findings with prose fields left
-// empty (observed live: full items/recalls/schedule data, but summary/actionPlan
-// blank) — the required-field check in the tool schema only guarantees presence,
-// not non-empty content. "Bottom line" renders findings.summary unconditionally,
-// so an empty string means a visibly broken result. Build a plain, honest
-// fallback from data we already have deterministically, rather than leaving
-// either field blank.
+// empty or reduced to filler (observed live: a "summary" that just restates
+// the vehicle/mileage already shown in the header above it, with no mention
+// of what's actually overdue or the recalls found) — the required-field
+// check in the tool schema only guarantees presence, not substantive
+// content. "Bottom line" renders findings.summary unconditionally, so this
+// isn't a hidden quality issue, it's a visibly unhelpful result. Always
+// attach the real numbers we already have deterministically, rather than
+// trusting the model to have included them.
 function fillMissingSummary(findings: Findings): Findings {
-  const summary =
-    findings.summary && findings.summary.trim().length > 0
-      ? findings.summary
-      : buildFallbackSummary(findings);
+  const highlights = buildFactualHighlights(findings);
+  const modelSummary = findings.summary?.trim();
+
+  let summary: string;
+  if (!modelSummary) {
+    summary = highlights ?? "Nothing is overdue or due right now.";
+  } else if (highlights) {
+    const separator = /[.!?]$/.test(modelSummary) ? "" : ".";
+    summary = `${modelSummary}${separator} ${highlights}`;
+  } else {
+    summary = modelSummary;
+  }
+
   const actionPlan =
     findings.actionPlan && findings.actionPlan.trim().length > 0
       ? findings.actionPlan
@@ -319,24 +330,30 @@ function fillMissingSummary(findings: Findings): Findings {
   return { ...findings, summary, actionPlan };
 }
 
-function buildFallbackSummary(findings: Findings): string {
+// Returns null when there's nothing noteworthy to add (nothing due, no
+// recalls, no flagged quote items) — so a genuinely fine model summary in
+// the "all clear" case isn't redundantly padded with "nothing is due."
+function buildFactualHighlights(findings: Findings): string | null {
   const overdue = findings.items.filter((it) => it.status === "overdue").length;
   const dueNow = findings.items.filter((it) => it.status === "due_now").length;
   const flagged = findings.quoteVerdicts.filter((qv) => qv.verdict !== "justified").length;
+  const recalls = findings.recalls?.count ?? 0;
+
+  if (overdue === 0 && dueNow === 0 && recalls === 0 && flagged === 0) return null;
 
   const parts: string[] = [];
-  parts.push(
-    overdue > 0 || dueNow > 0
-      ? [
-          overdue > 0 ? `${overdue} item${overdue === 1 ? "" : "s"} overdue` : "",
-          dueNow > 0 ? `${dueNow} due now` : "",
-        ]
-          .filter(Boolean)
-          .join(" and ")
-      : "Nothing is overdue or due right now"
-  );
-  if (findings.recalls && findings.recalls.count > 0) {
-    parts.push(`${findings.recalls.count} open recall${findings.recalls.count === 1 ? "" : "s"} reported`);
+  if (overdue > 0 || dueNow > 0) {
+    parts.push(
+      [
+        overdue > 0 ? `${overdue} item${overdue === 1 ? "" : "s"} overdue` : "",
+        dueNow > 0 ? `${dueNow} due now` : "",
+      ]
+        .filter(Boolean)
+        .join(" and ")
+    );
+  }
+  if (recalls > 0) {
+    parts.push(`${recalls} open recall${recalls === 1 ? "" : "s"} reported`);
   }
   if (flagged > 0) {
     parts.push(`${flagged} quoted item${flagged === 1 ? "" : "s"} may not be justified — see below`);
