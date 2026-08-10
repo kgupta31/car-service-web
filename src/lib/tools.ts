@@ -428,9 +428,18 @@ const DIY_SERVICES: { match: string; info: DiyInfo }[] = [
 // Replacement" and "cabin air filter" both hit.
 export function findDiyInfo(serviceName: string): DiyInfo | undefined {
   const n = serviceName.toLowerCase().replace(/[^a-z0-9]/g, "");
-  // Skip anything mentioning brakes/tires/steering even if another keyword
-  // matches — those are never DIY recommendations from this app.
-  if (/brake|tire|steer|suspension|airbag|coolant|transmission/.test(n)) return undefined;
+  // Skip anything mentioning brakes/tires/steering (or a bundled non-trivial
+  // job) even if another keyword also matches — those are never DIY
+  // recommendations from this app. Notably: "battery" alone would otherwise
+  // badge a hybrid/EV high-voltage battery job, or a bundled "battery and
+  // starter" service, as a $120-200/20-min DIY task.
+  if (
+    /brake|tire|steer|suspension|airbag|coolant|transmission|hybrid|highvoltage|starter|alternator|linkage/.test(
+      n
+    )
+  ) {
+    return undefined;
+  }
   const hit = DIY_SERVICES.find((d) => n.includes(d.match));
   return hit?.info;
 }
