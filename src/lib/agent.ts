@@ -84,7 +84,11 @@ has proposed, you must:
    at a similar mileage (within ~2,000 miles). If so, explicitly call this out as likely duplicate
    billing in the summary — the same or a different shop may be re-quoting something already
    flagged.
-10. Finish by calling present_findings with the full structured result — this IS your final answer,
+10. Assign each schedule item a priority: "safety" for anything safety-critical that is overdue or
+   due now (brakes, tires, steering, suspension, lights), "soon" for other overdue/due-now items,
+   and "can_wait" for items that are not due yet. Then write a 1-3 sentence actionPlan saying what
+   to do first and what can wait, referencing concrete items and numbers.
+11. Finish by calling present_findings with the full structured result — this IS your final answer,
    do not also write a text response after it. Include a concise plain-English summary sentence.`;
 
 const PRESENT_FINDINGS_TOOL = {
@@ -119,6 +123,7 @@ const PRESENT_FINDINGS_TOOL = {
               category: { type: "string", enum: ["routine", "major"] },
               status: { type: "string", enum: ["overdue", "due_now", "not_due"] },
               milesInfo: { type: "string" },
+              priority: { type: "string", enum: ["safety", "soon", "can_wait"] },
             },
             required: ["service", "category", "status", "milesInfo"],
           },
@@ -140,6 +145,7 @@ const PRESENT_FINDINGS_TOOL = {
         dutyReason: { type: "string" },
         disputeDraft: { type: "string" },
         transcribedItems: { type: "array", items: { type: "string" } },
+        actionPlan: { type: "string" },
       },
       required: ["vehicle", "mileage", "scheduleSource", "exactMatch", "items", "quoteVerdicts", "summary"],
     },
@@ -206,6 +212,24 @@ function applyDiyFlags(findings: Findings): Findings {
     quoteVerdicts: findings.quoteVerdicts.map((qv) => {
       const diy = findDiyInfo(qv.item);
       return diy ? { ...qv, diy } : qv;
+    }),
+  };
+}
+
+const SAFETY_CRITICAL = /brake|tire|steer|suspension|headlight|taillight|wiper/;
+
+// The model assigns priority (it needs judgment), but a safety-critical item
+// that's actually due must never be ranked below convenience work — enforce
+// that in code rather than trusting the prompt.
+function enforceSafetyPriority(findings: Findings): Findings {
+  return {
+    ...findings,
+    items: findings.items.map((it) => {
+      const isDue = it.status === "overdue" || it.status === "due_now";
+      if (isDue && SAFETY_CRITICAL.test(it.service.toLowerCase())) {
+        return { ...it, priority: "safety" as const };
+      }
+      return it.priority ? it : { ...it, priority: isDue ? ("soon" as const) : ("can_wait" as const) };
     }),
   };
 }
@@ -394,8 +418,10 @@ export async function* runAgent(
         if (typeof rawFindings.exactMatch === "string") {
           rawFindings.exactMatch = rawFindings.exactMatch.trim().toLowerCase() === "true";
         }
-        const findings = applyDiyFlags(
-          fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage)
+        const findings = enforceSafetyPriority(
+          applyDiyFlags(
+            fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage)
+          )
         );
 
         // transcribedItems comes from the dedicated transcribeQuoteImage() call, not

@@ -7,12 +7,15 @@ export type DiyInfo = {
   note: string;
 };
 
+export type Priority = "safety" | "soon" | "can_wait";
+
 export type FindingsItem = {
   service: string;
   category: "routine" | "major";
   status: ItemStatus;
   milesInfo: string;
   diy?: DiyInfo;
+  priority?: Priority;
 };
 
 export type QuoteVerdict = {
@@ -59,6 +62,7 @@ export type Findings = {
   priceAssessment?: PriceAssessment;
   scheduleSources?: string[];
   recalls?: RecallSummary;
+  actionPlan?: string;
 };
 
 export type AgentEvent =

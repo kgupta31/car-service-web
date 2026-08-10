@@ -24,6 +24,7 @@ import {
   ExternalLink,
   ShieldAlert,
   Hammer,
+  ListChecks,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
@@ -70,6 +71,12 @@ const PRICE_VERDICT_META: Record<
   high: { label: "Looks high", color: "text-danger border-danger/30 bg-danger/10" },
   low: { label: "Looks low", color: "text-accent border-accent/30 bg-accent/10" },
   unknown: { label: "Uncertain", color: "text-white/50 border-white/20 bg-white/5" },
+};
+
+const PRIORITY_META: Record<"safety" | "soon" | "can_wait", { label: string; color: string }> = {
+  safety: { label: "Do first — safety", color: "text-danger border-danger/30 bg-danger/10" },
+  soon: { label: "Soon", color: "text-warn border-warn/30 bg-warn/10" },
+  can_wait: { label: "Can wait", color: "text-ok border-ok/30 bg-ok/10" },
 };
 
 export default function AgentConsole() {
@@ -597,6 +604,7 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
     priceAssessment,
     scheduleSources,
     recalls,
+    actionPlan,
   } = findings;
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -829,6 +837,35 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
             </button>
           </div>
           <p className="text-sm text-white/70 leading-relaxed whitespace-pre-wrap">{disputeDraft}</p>
+        </div>
+      )}
+
+      {/* Prioritized action plan */}
+      {actionPlan && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center gap-2 text-sm font-semibold mb-3">
+            <ListChecks className="size-4 text-accent" />
+            Do this first
+          </div>
+          <p className="text-sm text-white/70 leading-relaxed mb-4">{actionPlan}</p>
+          <div className="space-y-2">
+            {(["safety", "soon"] as const).map((level) => {
+              const group = items.filter((it) => it.priority === level);
+              if (group.length === 0) return null;
+              return (
+                <div key={level} className="flex items-start gap-3 flex-wrap">
+                  <span
+                    className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full border ${PRIORITY_META[level].color}`}
+                  >
+                    {PRIORITY_META[level].label}
+                  </span>
+                  <span className="text-xs text-white/60 leading-relaxed">
+                    {group.map((it) => it.service).join(", ")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
