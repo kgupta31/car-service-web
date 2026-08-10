@@ -25,10 +25,12 @@ import {
   ShieldAlert,
   Hammer,
   ListChecks,
+  Share2,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
 import { compressImageToDataUrl } from "@/lib/image";
+import { encodeFindings, decodeFindings } from "@/lib/share";
 import { VehicleIcon } from "@/components/VehicleIcon";
 import { FollowupChat } from "@/components/FollowupChat";
 import { PastAuditsList } from "@/components/PastAuditsList";
@@ -98,6 +100,7 @@ export default function AgentConsole() {
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
   const [findings, setFindings] = useState<Findings | null>(null);
+  const [isSharedView, setIsSharedView] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pastAudits, setPastAudits] = useState<AuditRecord[]>([]);
   const traceIdRef = useRef(0);
@@ -107,6 +110,19 @@ export default function AgentConsole() {
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
     setPastAudits(getVehicleHistory(identifier)?.audits ?? []);
   }, [mode, vin, manualYear, manualMake, manualModel]);
+
+  // A shared audit arrives as ?r=<compressed findings>. Render it read-only;
+  // never write someone else's car into this browser's vehicle history.
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("r");
+    if (!param) return;
+    decodeFindings(param).then((shared) => {
+      if (shared) {
+        setFindings(shared);
+        setIsSharedView(true);
+      }
+    });
+  }, []);
 
   const vinValid = vin.trim().length === 17;
   const manualValid =
@@ -262,6 +278,17 @@ export default function AgentConsole() {
 
   return (
     <div className="w-full max-w-3xl mx-auto">
+      {isSharedView && (
+        <div className="glass rounded-2xl mb-4 p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="text-xs text-white/60">You&apos;re viewing a shared audit.</div>
+          <a
+            href="/"
+            className="text-xs font-medium text-accent hover:underline"
+          >
+            Run your own →
+          </a>
+        </div>
+      )}
       <PastAuditsList audits={pastAudits} />
       <form
         onSubmit={runAgent}
@@ -583,6 +610,7 @@ export default function AgentConsole() {
             key={`${findings.vehicle.year}-${findings.vehicle.make}-${findings.vehicle.model}`}
             findings={findings}
             unit={unit}
+            isSharedView={isSharedView}
           />
         )}
       </AnimatePresence>
@@ -590,7 +618,15 @@ export default function AgentConsole() {
   );
 }
 
-function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km" }) {
+function ResultsView({
+  findings,
+  unit,
+  isSharedView,
+}: {
+  findings: Findings;
+  unit: "mi" | "km";
+  isSharedView?: boolean;
+}) {
   const {
     vehicle,
     mileage,
@@ -620,6 +656,24 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
     setTimeout(() => setCopyState("idle"), 2000);
   }
 
+  const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
+
+  async function copyShareLink() {
+    const encoded = await encodeFindings(findings);
+    if (!encoded) {
+      setShareState("failed");
+      setTimeout(() => setShareState("idle"), 2000);
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/?r=${encoded}`);
+      setShareState("copied");
+    } catch {
+      setShareState("failed");
+    }
+    setTimeout(() => setShareState("idle"), 2000);
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -641,6 +695,16 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {!isSharedView && (
+            <button
+              type="button"
+              onClick={copyShareLink}
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/10 transition"
+            >
+              <Share2 className="size-3.5" />
+              {shareState === "copied" ? "Link copied" : shareState === "failed" ? "Couldn't share" : "Share"}
+            </button>
+          )}
           {findings.dutyClassification === "severe" && (
             <div
               className="text-xs px-3 py-1.5 rounded-full border border-warn/30 bg-warn/10 text-warn"
