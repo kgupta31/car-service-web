@@ -14,7 +14,7 @@
  */
 
 import OpenAI from "openai";
-import { TOOL_SCHEMAS, runTool, computeScheduleItemStatus } from "./tools";
+import { TOOL_SCHEMAS, runTool, computeScheduleItemStatus, findDiyInfo } from "./tools";
 import type { ScheduleResult, RecallResult } from "./tools";
 import type { Findings, FindingsItem, AgentEvent, ChatMessage, PriceAssessment } from "./types";
 
@@ -192,6 +192,22 @@ function fillMissingScheduleItems(
   });
 
   return { ...findings, items: [...findings.items, ...added] };
+}
+
+// Computed in code, not asked of the model — same reason as
+// fillMissingScheduleItems: deterministic beats hoping the model complies.
+function applyDiyFlags(findings: Findings): Findings {
+  return {
+    ...findings,
+    items: findings.items.map((it) => {
+      const diy = findDiyInfo(it.service);
+      return diy ? { ...it, diy } : it;
+    }),
+    quoteVerdicts: findings.quoteVerdicts.map((qv) => {
+      const diy = findDiyInfo(qv.item);
+      return diy ? { ...qv, diy } : qv;
+    }),
+  };
 }
 
 // Isolated, single-shot vision call: transcribe line items from a quote
@@ -378,7 +394,9 @@ export async function* runAgent(
         if (typeof rawFindings.exactMatch === "string") {
           rawFindings.exactMatch = rawFindings.exactMatch.trim().toLowerCase() === "true";
         }
-        const findings = fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage);
+        const findings = applyDiyFlags(
+          fillMissingScheduleItems(rawFindings as Findings, lastSchedule, rawFindings.mileage)
+        );
 
         // transcribedItems comes from the dedicated transcribeQuoteImage() call, not
         // the model — it's authoritative and overrides anything the model guessed.

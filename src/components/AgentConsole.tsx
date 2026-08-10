@@ -23,6 +23,7 @@ import {
   Search,
   ExternalLink,
   ShieldAlert,
+  Hammer,
 } from "lucide-react";
 import type { AgentEvent, Findings } from "@/lib/types";
 import { kmToMiles, milesToKm, convertMilesInfoToKm } from "@/lib/units";
@@ -754,6 +755,13 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
                     </span>
                   </div>
                   <p className="text-xs text-white/50 mt-1.5 leading-relaxed">{qv.explanation}</p>
+                  {qv.diy && (
+                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-ok/30 bg-ok/10 px-2.5 py-1 text-[11px] text-ok">
+                      <Hammer className="size-3" />
+                      DIY-able · ~{qv.diy.partCostRange} part · {qv.diy.minutes} min
+                      <span className="text-ok/60">— {qv.diy.note}</span>
+                    </div>
+                  )}
                 </motion.div>
               );
             })}
@@ -875,6 +883,12 @@ function ResultsView({ findings, unit }: { findings: Findings; unit: "mi" | "km"
                     {unit === "km" ? convertMilesInfoToKm(item.milesInfo) : item.milesInfo}
                   </span>
                 </div>
+                {item.diy && (
+                  <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-ok/80">
+                    <Hammer className="size-3" />
+                    DIY ~{item.diy.partCostRange} · {item.diy.minutes} min
+                  </div>
+                )}
               </motion.div>
             );
           })}

@@ -5,7 +5,7 @@
  * CarMD (or similar) API call later without touching the agent loop.
  */
 
-import type { ItemStatus, RecallItem } from "./types";
+import type { ItemStatus, RecallItem, DiyInfo } from "./types";
 
 export type MaintenanceItem = {
   service: string;
@@ -396,4 +396,41 @@ export async function runTool(name: string, input: Record<string, unknown>): Pro
   } catch (e) {
     return { error: `Tool '${name}' raised an exception: ${(e as Error).message}` };
   }
+}
+
+// Deliberately hardcoded and deliberately conservative. This is NOT model-
+// judged: an LLM deciding "you can DIY your brakes" is a safety hazard.
+// Only genuinely trivial, non-safety-critical items belong here.
+const DIY_SERVICES: { match: string; info: DiyInfo }[] = [
+  {
+    match: "cabinairfilter",
+    info: { partCostRange: "$12-25", minutes: 10, note: "Usually behind the glovebox, no tools." },
+  },
+  {
+    match: "engineairfilter",
+    info: { partCostRange: "$15-30", minutes: 10, note: "Airbox clips open by hand on most cars." },
+  },
+  {
+    match: "wiperblade",
+    info: { partCostRange: "$20-40", minutes: 5, note: "Clip on and off, no tools." },
+  },
+  {
+    match: "keyfobbattery",
+    info: { partCostRange: "$3-8", minutes: 5, note: "A coin cell and a small screwdriver." },
+  },
+  {
+    match: "battery",
+    info: { partCostRange: "$120-200", minutes: 20, note: "Two terminals and a hold-down clamp." },
+  },
+];
+
+// Reuses the same normalization the schedule matcher uses so "Cabin Air Filter
+// Replacement" and "cabin air filter" both hit.
+export function findDiyInfo(serviceName: string): DiyInfo | undefined {
+  const n = serviceName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Skip anything mentioning brakes/tires/steering even if another keyword
+  // matches — those are never DIY recommendations from this app.
+  if (/brake|tire|steer|suspension|airbag|coolant|transmission/.test(n)) return undefined;
+  const hit = DIY_SERVICES.find((d) => n.includes(d.match));
+  return hit?.info;
 }

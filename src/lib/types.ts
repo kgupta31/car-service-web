@@ -1,17 +1,25 @@
 export type Verdict = "justified" | "premature" | "not_on_schedule";
 export type ItemStatus = "overdue" | "due_now" | "not_due";
 
+export type DiyInfo = {
+  partCostRange: string;
+  minutes: number;
+  note: string;
+};
+
 export type FindingsItem = {
   service: string;
   category: "routine" | "major";
   status: ItemStatus;
   milesInfo: string;
+  diy?: DiyInfo;
 };
 
 export type QuoteVerdict = {
   item: string;
   verdict: Verdict;
   explanation: string;
+  diy?: DiyInfo;
 };
 
 export type DutyClassification = "normal" | "severe";
