@@ -299,6 +299,61 @@ function toModelFacingToolResult(toolName: string, result: unknown): unknown {
   };
 }
 
+// Same failure mode as fillMissingQuoteVerdicts: under a long, multi-instruction
+// prompt the model sometimes returns present_findings with prose fields left
+// empty (observed live: full items/recalls/schedule data, but summary/actionPlan
+// blank) — the required-field check in the tool schema only guarantees presence,
+// not non-empty content. "Bottom line" renders findings.summary unconditionally,
+// so an empty string means a visibly broken result. Build a plain, honest
+// fallback from data we already have deterministically, rather than leaving
+// either field blank.
+function fillMissingSummary(findings: Findings): Findings {
+  const summary =
+    findings.summary && findings.summary.trim().length > 0
+      ? findings.summary
+      : buildFallbackSummary(findings);
+  const actionPlan =
+    findings.actionPlan && findings.actionPlan.trim().length > 0
+      ? findings.actionPlan
+      : buildFallbackActionPlan(findings);
+  return { ...findings, summary, actionPlan };
+}
+
+function buildFallbackSummary(findings: Findings): string {
+  const overdue = findings.items.filter((it) => it.status === "overdue").length;
+  const dueNow = findings.items.filter((it) => it.status === "due_now").length;
+  const flagged = findings.quoteVerdicts.filter((qv) => qv.verdict !== "justified").length;
+
+  const parts: string[] = [];
+  parts.push(
+    overdue > 0 || dueNow > 0
+      ? [
+          overdue > 0 ? `${overdue} item${overdue === 1 ? "" : "s"} overdue` : "",
+          dueNow > 0 ? `${dueNow} due now` : "",
+        ]
+          .filter(Boolean)
+          .join(" and ")
+      : "Nothing is overdue or due right now"
+  );
+  if (findings.recalls && findings.recalls.count > 0) {
+    parts.push(`${findings.recalls.count} open recall${findings.recalls.count === 1 ? "" : "s"} reported`);
+  }
+  if (flagged > 0) {
+    parts.push(`${flagged} quoted item${flagged === 1 ? "" : "s"} may not be justified — see below`);
+  }
+  return `${parts.join("; ")}.`;
+}
+
+function buildFallbackActionPlan(findings: Findings): string | undefined {
+  const urgent = findings.items.filter((it) => it.priority === "safety" || it.priority === "soon");
+  if (urgent.length === 0) return findings.actionPlan;
+  const names = urgent
+    .slice(0, 3)
+    .map((it) => it.service)
+    .join(", ");
+  return `Start with ${names}${urgent.length > 3 ? `, and ${urgent.length - 3} more` : ""} — everything else can wait.`;
+}
+
 const SAFETY_CRITICAL = /brake|tire|steer|suspension|headlight|taillight|wiper/;
 
 // The model assigns priority (it needs judgment), but a safety-critical item
@@ -559,7 +614,9 @@ export async function* runAgent(
           }
         }
 
-        yield { type: "final", findings };
+        // Runs last, after recalls/schedule provenance are attached, so the
+        // fallback (if needed) can reference real recall counts.
+        yield { type: "final", findings: fillMissingSummary(findings) };
         return;
       }
 
