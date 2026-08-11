@@ -110,20 +110,35 @@ My dealership/shop has proposed the following services:
 
 ### Photo extraction
 
+**Correction found while writing the implementation plan:** the original
+draft of this section assumed extracted items get shown as editable rows
+before the user submits. They don't — photo mode and typed-item mode are
+already mutually exclusive single-submission flows today (`quoteMode: "text"
+| "photo"` in `AgentConsole.tsx`); the photo is transcribed server-side as
+part of the one request that also runs the full audit, and transcribed items
+are only ever shown afterward, read-only, in the existing "Read from your
+photo" section. Adding a pre-submit preview/edit round-trip would be a
+materially bigger UI change than this feature calls for, so this design does
+not add one — it follows the existing pattern instead.
+
 `transcribeQuoteImage`'s vision prompt/schema extends from
 `{ items: string[] }` to `{ items: [{ service: string, price: number | null }] }`.
-Extracted prices pre-fill the itemized rows in the UI; the user can still
-edit or clear them before submitting. No behavior change when a price isn't
-visible in the photo — `price: null` just means that row starts blank, same
-as manual entry.
+Extracted `{service, price}` pairs flow straight into the audit exactly like
+extracted item *names* already do today — no user edit step. The existing
+"Read from your photo" section gets extended to also show the extracted
+price next to each line, still read-only. `price: null` just means no price
+comparison badge shows for that item (same as manual entry with no price
+typed).
 
 ### UI
 
-The quote-entry textarea becomes a dynamic list: one row per service, each
-with a name field and an optional `$` field, plus add/remove row controls.
-The "Amount quoted" field is removed — the sum of itemized prices already
-gives the total, so a separate field is redundant. ZIP/region is unchanged
-(still used to localize the price search).
+In typed-entry mode (`quoteMode === "text"`), the quote-entry textarea
+becomes a dynamic list: one row per service, each with a name field and an
+optional `$` field, plus add/remove row controls. Photo mode is untouched
+apart from what's described above (its own upload UI, unaffected). The
+"Amount quoted" field is removed — the sum of itemized prices already gives
+the total, so a separate field is redundant. ZIP/region is unchanged (still
+used to localize the price search).
 
 Each item in the results view gets a small inline badge next to its
 verdict, mirroring the existing DIY-badge visual pattern:
