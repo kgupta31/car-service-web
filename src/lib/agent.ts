@@ -17,6 +17,7 @@ import OpenAI from "openai";
 import { TOOL_SCHEMAS, runTool, computeScheduleItemStatus, findDiyInfo } from "./tools";
 import type { ScheduleResult, RecallResult } from "./tools";
 import type { Findings, FindingsItem, AgentEvent, ChatMessage, QuoteItemInput } from "./types";
+import { logUsage } from "./usageLog";
 
 export type { Findings, AgentEvent } from "./types";
 
@@ -468,6 +469,7 @@ export async function transcribeQuoteImage(quoteImage: string): Promise<QuoteIte
       // fixed maxDuration — a timeout just means "couldn't read the photo."
       { timeout: 20_000 }
     );
+    logUsage("transcribeQuoteImage", VISION_MODEL, response.usage);
 
     const raw = response.choices[0].message.content;
     if (!raw) return [];
@@ -578,6 +580,7 @@ async function assessItemPrices(
       // it's already designed to degrade to "no priceComparison" on failure.
       { timeout: 15_000 }
     );
+    logUsage("assessItemPrices", PRICE_MODEL, response.usage);
 
     const raw = response.choices[0].message.content;
     if (!raw) return null;
@@ -678,6 +681,7 @@ export async function* runAgent(
         // a silent timeout.
         { timeout: 20_000 }
       );
+      logUsage(`runAgent turn ${turn + 1}`, MODEL, response.usage);
     } catch (e) {
       yield { type: "error", message: toUserFacingError(e, "runAgent") };
       return;
@@ -837,6 +841,7 @@ export async function runFollowup(
     messages,
     temperature: 0.3,
   });
+  logUsage("runFollowup", LIGHT_MODEL, response.usage);
 
   return response.choices[0].message.content || "I don't have a response for that — try rephrasing?";
 }
