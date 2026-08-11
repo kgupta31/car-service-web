@@ -18,22 +18,34 @@ export type FindingsItem = {
   priority?: Priority;
 };
 
+// A quoted service, as entered by the user (typed row or extracted from a
+// photo) — price is optional since a typical-range lookup has value even
+// without one to compare against. Used both as the request-body shape for
+// `quote` and for the vision-transcription result.
+export type QuoteItemInput = {
+  service: string;
+  price?: number;
+};
+
+export type PriceComparisonVerdict = "over" | "under" | "in_range" | "unknown";
+
+export type PriceComparison = {
+  typicalLow: number;
+  typicalHigh: number;
+  verdict: PriceComparisonVerdict;
+  sources: string[];
+};
+
 export type QuoteVerdict = {
   item: string;
   verdict: Verdict;
   explanation: string;
   diy?: DiyInfo;
+  priceQuoted?: number;
+  priceComparison?: PriceComparison;
 };
 
 export type DutyClassification = "normal" | "severe";
-
-export type PriceVerdict = "in_range" | "high" | "low" | "unknown";
-
-export type PriceAssessment = {
-  verdict: PriceVerdict;
-  explanation: string;
-  sources: string[];
-};
 
 export type RecallItem = {
   component: string;
@@ -58,8 +70,7 @@ export type Findings = {
   dutyClassification?: DutyClassification;
   dutyReason?: string;
   disputeDraft?: string;
-  transcribedItems?: string[];
-  priceAssessment?: PriceAssessment;
+  transcribedItems?: QuoteItemInput[];
   scheduleSources?: string[];
   recalls?: RecallSummary;
   actionPlan?: string;
