@@ -18,7 +18,6 @@ import {
   Check,
   Image as ImageIcon,
   X,
-  DollarSign,
   MapPin,
   Search,
   ExternalLink,
@@ -66,15 +65,25 @@ const VERDICT_META: Record<
   not_on_schedule: { label: "Not on schedule", color: "text-danger border-danger/30 bg-danger/10", Icon: XCircle },
 };
 
-const PRICE_VERDICT_META: Record<
-  NonNullable<Findings["priceAssessment"]>["verdict"],
-  { label: string; color: string }
-> = {
-  in_range: { label: "Looks fair", color: "text-ok border-ok/30 bg-ok/10" },
-  high: { label: "Looks high", color: "text-danger border-danger/30 bg-danger/10" },
-  low: { label: "Looks low", color: "text-accent border-accent/30 bg-accent/10" },
-  unknown: { label: "Uncertain", color: "text-white/50 border-white/20 bg-white/5" },
-};
+function priceComparisonBadge(
+  pc: NonNullable<Findings["quoteVerdicts"][number]["priceComparison"]>,
+  priceQuoted: number | undefined
+): { text: string; color: string } {
+  const range = `typical $${Math.round(pc.typicalLow).toLocaleString()}-${Math.round(
+    pc.typicalHigh
+  ).toLocaleString()}`;
+  if (pc.verdict === "unknown" || priceQuoted === undefined) {
+    return { text: range, color: "text-white/50 border-white/20 bg-white/5" };
+  }
+  const quotedText = `$${Math.round(priceQuoted).toLocaleString()} quoted · ${range}`;
+  if (pc.verdict === "over") {
+    return { text: `${quotedText} · over typical range`, color: "text-danger border-danger/30 bg-danger/10" };
+  }
+  if (pc.verdict === "under") {
+    return { text: `${quotedText} · under typical range`, color: "text-accent border-accent/30 bg-accent/10" };
+  }
+  return { text: `${quotedText} · in range`, color: "text-ok border-ok/30 bg-ok/10" };
+}
 
 const PRIORITY_META: Record<"safety" | "soon" | "can_wait", { label: string; color: string }> = {
   safety: { label: "Do first — safety", color: "text-danger border-danger/30 bg-danger/10" },
@@ -90,13 +99,14 @@ export default function AgentConsole() {
   const [manualModel, setManualModel] = useState("");
   const [mileage, setMileage] = useState<string>("60000");
   const [unit, setUnit] = useState<"mi" | "km">("mi");
-  const [quote, setQuote] = useState("");
+  const [quoteRows, setQuoteRows] = useState<{ service: string; price: string }[]>([
+    { service: "", price: "" },
+  ]);
   const [quoteMode, setQuoteMode] = useState<"text" | "photo">("text");
   const [quoteImage, setQuoteImage] = useState<string | null>(null);
   const [quoteImageError, setQuoteImageError] = useState<string | null>(null);
   const [compressingImage, setCompressingImage] = useState(false);
   const [drivingConditions, setDrivingConditions] = useState("");
-  const [amountQuoted, setAmountQuoted] = useState("");
   const [zip, setZip] = useState("");
   const [loading, setLoading] = useState(false);
   const [trace, setTrace] = useState<TraceLine[]>([]);
@@ -152,6 +162,18 @@ export default function AgentConsole() {
     }
   }
 
+  function updateQuoteRow(index: number, field: "service" | "price", value: string) {
+    setQuoteRows((rows) => rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
+  }
+
+  function addQuoteRow() {
+    setQuoteRows((rows) => [...rows, { service: "", price: "" }]);
+  }
+
+  function removeQuoteRow(index: number) {
+    setQuoteRows((rows) => (rows.length === 1 ? rows : rows.filter((_, i) => i !== index)));
+  }
+
   async function runAgent(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -172,13 +194,19 @@ export default function AgentConsole() {
     const identifier = vehicleIdentifier(mode, vin, manualYear, manualMake, manualModel);
     const historyNote = summarizeHistoryForPrompt(getVehicleHistory(historyIdentifier(mode, vin)));
     const cachedSchedule = getCachedSchedule(identifier);
-    const effectiveQuote = quoteMode === "photo" ? "" : quote;
+    const effectiveQuote =
+      quoteMode === "photo"
+        ? []
+        : quoteRows
+            .map((r) => ({
+              service: r.service.trim(),
+              price:
+                r.price.trim().length > 0 && Number.isFinite(Number(r.price)) && Number(r.price) > 0
+                  ? Number(r.price)
+                  : undefined,
+            }))
+            .filter((r) => r.service.length > 0);
     const effectiveQuoteImage = quoteMode === "photo" ? quoteImage || undefined : undefined;
-    const parsedAmount = Number(amountQuoted);
-    const effectiveAmountQuoted =
-      amountQuoted.trim().length > 0 && Number.isFinite(parsedAmount) && parsedAmount > 0
-        ? parsedAmount
-        : undefined;
 
     try {
       const res = await fetch("/api/agent", {
@@ -194,7 +222,6 @@ export default function AgentConsole() {
                 drivingConditions,
                 historyNote,
                 quoteImage: effectiveQuoteImage,
-                amountQuoted: effectiveAmountQuoted,
                 zip: zip.trim(),
                 cachedSchedule,
               }
@@ -208,7 +235,6 @@ export default function AgentConsole() {
                 drivingConditions,
                 historyNote,
                 quoteImage: effectiveQuoteImage,
-                amountQuoted: effectiveAmountQuoted,
                 zip: zip.trim(),
                 cachedSchedule,
               }
@@ -437,7 +463,7 @@ export default function AgentConsole() {
                   type="button"
                   onClick={() => {
                     setQuoteMode("photo");
-                    setQuote("");
+                    setQuoteRows([{ service: "", price: "" }]);
                   }}
                   className={`px-2 py-1 transition ${
                     quoteMode === "photo" ? "bg-accent/20 text-accent" : "text-white/40"
@@ -448,13 +474,43 @@ export default function AgentConsole() {
               </div>
             </div>
             {quoteMode === "text" ? (
-              <textarea
-                value={quote}
-                onChange={(e) => setQuote(e.target.value)}
-                rows={2}
-                placeholder="Transmission flush, Timing belt replacement, Cabin air filter, Wiper blades"
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition resize-none placeholder:text-white/20"
-              />
+              <div className="space-y-2">
+                {quoteRows.map((row, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      value={row.service}
+                      onChange={(e) => updateQuoteRow(i, "service", e.target.value)}
+                      placeholder={i === 0 ? "e.g. Transmission flush" : "Another service"}
+                      className="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
+                    />
+                    <div className="relative w-28 shrink-0">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-sm pointer-events-none">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={row.price}
+                        onChange={(e) => updateQuoteRow(i, "price", e.target.value)}
+                        placeholder="optional"
+                        className="w-full rounded-xl bg-white/5 border border-white/10 pl-6 pr-3 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeQuoteRow(i)}
+                      disabled={quoteRows.length === 1}
+                      className="shrink-0 text-white/30 hover:text-white/60 disabled:opacity-20 disabled:cursor-not-allowed transition p-1"
+                      aria-label="Remove this service"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" onClick={addQuoteRow} className="text-xs text-accent hover:underline">
+                  + Add another service
+                </button>
+              </div>
             ) : (
               <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3">
                 <label className="inline-flex items-center gap-2 text-xs text-white/60 cursor-pointer">
@@ -505,21 +561,6 @@ export default function AgentConsole() {
               rows={2}
               placeholder="e.g. I tow a small trailer most weekends, lots of short trips in winter"
               className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition resize-none placeholder:text-white/20"
-            />
-          </div>
-
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
-              <DollarSign className="size-4 text-accent" />
-              Amount quoted <span className="text-white/30 font-normal">(optional)</span>
-            </label>
-            <input
-              type="number"
-              min={0}
-              value={amountQuoted}
-              onChange={(e) => setAmountQuoted(e.target.value)}
-              placeholder="189.99"
-              className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition"
             />
           </div>
 
@@ -642,11 +683,13 @@ function ResultsView({
     scheduleSource,
     disputeDraft,
     transcribedItems,
-    priceAssessment,
     scheduleSources,
     recalls,
     actionPlan,
   } = findings;
+  // All items share one batched search, so sources are the same across
+  // every priceComparison that has any — take the first, not per item.
+  const priceSources = quoteVerdicts.find((qv) => qv.priceComparison)?.priceComparison?.sources ?? [];
   const displayMileage = unit === "km" ? milesToKm(mileage) : mileage;
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
@@ -797,7 +840,10 @@ function ResultsView({
           </div>
           <ul className="text-xs text-white/50 space-y-1 list-disc list-inside">
             {transcribedItems.map((item, i) => (
-              <li key={i}>{item}</li>
+              <li key={i}>
+                {item.service}
+                {item.price !== undefined ? ` — $${item.price.toLocaleString()}` : ""}
+              </li>
             ))}
           </ul>
         </div>
@@ -832,55 +878,56 @@ function ResultsView({
                     </span>
                   </div>
                   <p className="text-xs text-white/50 mt-1.5 leading-relaxed">{qv.explanation}</p>
-                  {qv.diy && (
-                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-ok/30 bg-ok/10 px-2.5 py-1 text-[11px] text-ok">
-                      <Hammer className="size-3" />
-                      DIY-able · ~{qv.diy.partCostRange} part · {qv.diy.minutes} min
-                      <span className="text-ok/60">— {qv.diy.note}</span>
-                    </div>
-                  )}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {qv.diy && (
+                      <div className="inline-flex items-center gap-1.5 rounded-lg border border-ok/30 bg-ok/10 px-2.5 py-1 text-[11px] text-ok">
+                        <Hammer className="size-3" />
+                        DIY-able · ~{qv.diy.partCostRange} part · {qv.diy.minutes} min
+                        <span className="text-ok/60">— {qv.diy.note}</span>
+                      </div>
+                    )}
+                    {qv.priceComparison &&
+                      (() => {
+                        const badge = priceComparisonBadge(qv.priceComparison, qv.priceQuoted);
+                        return (
+                          <div
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium ${badge.color}`}
+                          >
+                            <Search className="size-3" />
+                            {badge.text}
+                          </div>
+                        );
+                      })()}
+                  </div>
                 </motion.div>
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* Price reasonableness, if an amount was given and the model produced an assessment */}
-      {priceAssessment && (
-        <div className="glass rounded-2xl p-6">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <Search className="size-4 text-accent" />
-              Is the price fair?
-            </div>
-            <span
-              className={`shrink-0 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium ${(PRICE_VERDICT_META[priceAssessment.verdict] ?? PRICE_VERDICT_META.unknown).color}`}
-            >
-              {(PRICE_VERDICT_META[priceAssessment.verdict] ?? PRICE_VERDICT_META.unknown).label}
-            </span>
-          </div>
-          <p className="text-sm text-white/70 leading-relaxed">{priceAssessment.explanation}</p>
-          {priceAssessment.sources.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-              {priceAssessment.sources.map((source, i) => (
-                <a
-                  key={i}
-                  href={source}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-accent transition"
-                >
-                  <ExternalLink className="size-3" />
-                  {(() => {
-                    try {
-                      return new URL(source).hostname.replace(/^www\./, "");
-                    } catch {
-                      return source;
-                    }
-                  })()}
-                </a>
-              ))}
+          {priceSources.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <p className="text-[11px] text-white/30 mb-2">
+                Typical price ranges are from web search, not a specific local shop's quote.
+              </p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {priceSources.map((source, i) => (
+                  <a
+                    key={i}
+                    href={source}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-accent transition"
+                  >
+                    <ExternalLink className="size-3" />
+                    {(() => {
+                      try {
+                        return new URL(source).hostname.replace(/^www\./, "");
+                      } catch {
+                        return source;
+                      }
+                    })()}
+                  </a>
+                ))}
+              </div>
             </div>
           )}
         </div>
