@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { runFollowup } from "@/lib/agent";
+import { runFollowup, toUserFacingError } from "@/lib/agent";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { isTrustedOrigin } from "@/lib/originCheck";
 import type { Findings, ChatMessage } from "@/lib/types";
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
       headers: { "Content-Type": "application/json" },
     });
   } catch (e) {
-    return new Response(JSON.stringify({ error: (e as Error).message }), {
+    return new Response(JSON.stringify({ error: toUserFacingError(e, "followup") }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
     });
