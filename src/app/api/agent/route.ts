@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { runAgent, transcribeQuoteImage } from "@/lib/agent";
+import { runAgent, transcribeQuoteImage, toUserFacingError } from "@/lib/agent";
 import type { ScheduleResult } from "@/lib/tools";
 import type { QuoteItemInput } from "@/lib/types";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
           send(event);
         }
       } catch (e) {
-        send({ type: "error", message: (e as Error).message });
+        send({ type: "error", message: toUserFacingError(e, "route") });
       } finally {
         controller.close();
       }

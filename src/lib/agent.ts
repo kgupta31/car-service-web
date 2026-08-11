@@ -20,6 +20,25 @@ import type { Findings, FindingsItem, AgentEvent, ChatMessage, QuoteItemInput } 
 
 export type { Findings, AgentEvent } from "./types";
 
+// Never show a raw provider error to the user — Groq's own error text
+// includes our account/org ID, exact internal quota numbers, and a link to
+// *our* Groq billing page, none of which means anything to someone auditing
+// a car repair quote. Log the real error server-side (visible in Vercel's
+// function logs) and return a plain, honest, generic message instead. Used
+// everywhere a caught error could otherwise reach the client — the main
+// agent loop, the outer route-level catch-all, and the follow-up endpoint.
+export function toUserFacingError(e: unknown, context: string): string {
+  console.error(`[${context}]`, e);
+  const status = (e as { status?: number })?.status;
+  if (status === 429) {
+    return "This tool is getting more traffic than it can currently handle. Please try again in a few minutes.";
+  }
+  if (status === 413) {
+    return "That request was too large to process — try a shorter quote or fewer items.";
+  }
+  return "Something went wrong while running the audit. Please try again.";
+}
+
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 // A current Groq-hosted model that supports tool calling. Check
 // https://console.groq.com/docs/tool-use if this gets deprecated.
@@ -660,7 +679,7 @@ export async function* runAgent(
         { timeout: 20_000 }
       );
     } catch (e) {
-      yield { type: "error", message: `Model request failed: ${(e as Error).message}` };
+      yield { type: "error", message: toUserFacingError(e, "runAgent") };
       return;
     }
 
