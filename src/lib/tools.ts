@@ -6,6 +6,7 @@
  */
 
 import type { ItemStatus, RecallItem, DiyInfo } from "./types";
+import { logUsage } from "./usageLog";
 
 export type MaintenanceItem = {
   service: string;
@@ -243,6 +244,7 @@ async function searchMaintenanceSchedule(
 
     if (!res.ok) return null;
     const data = await res.json();
+    logUsage("searchMaintenanceSchedule", "groq/compound-mini", data?.usage);
     const raw = data?.choices?.[0]?.message?.content;
     if (!raw) return null;
 
