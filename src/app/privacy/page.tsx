@@ -82,13 +82,10 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-semibold text-white/90 mb-2">Questions</h2>
             <p>
               Reach out at{" "}
-              <a href="mailto:privacy@example.com" className="text-accent hover:underline">
-                privacy@example.com
+              <a href="mailto:kgupta31@asu.edu" className="text-accent hover:underline">
+                kgupta31@asu.edu
               </a>
               {" "}with any privacy questions.
-            </p>
-            <p className="mt-2 text-xs text-white/30">
-              (Site owner: replace the email above with a real contact address before publishing.)
             </p>
           </section>
         </div>
