@@ -1,3 +1,4 @@
+import Link from "next/link";
 import AgentConsole from "@/components/AgentConsole";
 import { FAQAccordion } from "@/components/FAQAccordion";
 import { ShieldCheck, Zap, GitBranch } from "lucide-react";
@@ -131,6 +132,15 @@ export default function Home() {
           </h2>
           <FAQAccordion items={FAQ_ITEMS} />
         </section>
+
+        {/* Footer */}
+        <footer className="max-w-5xl mx-auto px-6 pb-10 flex items-center justify-center gap-4 text-xs text-white/30">
+          <span>ServiceAudit Agent</span>
+          <span aria-hidden="true">·</span>
+          <Link href="/privacy" className="hover:text-white/60 transition">
+            Privacy Policy
+          </Link>
+        </footer>
       </div>
     </main>
   );
