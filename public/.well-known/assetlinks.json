@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.service_audit_agent.twa",
+      "sha256_cert_fingerprints": [
+        "25:95:E6:7D:A1:2E:AA:A1:B7:8E:83:A8:C0:5A:CB:1D:2D:D7:3E:B0:EA:08:CF:D2:A6:E1:1F:27:4A:F7:A2:4C"
+      ]
+    }
+  }
+]
