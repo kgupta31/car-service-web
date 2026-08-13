@@ -346,9 +346,9 @@ export default function AgentConsole() {
           </button>
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-2 gap-4 min-w-0">
           {mode === "vin" ? (
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2 min-w-0">
               <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
                 <Car className="size-4 text-accent" />
                 VIN <span className="text-white/30 font-normal">(17 characters)</span>
@@ -368,7 +368,7 @@ export default function AgentConsole() {
               </div>
             </div>
           ) : (
-            <div className="sm:col-span-2 grid grid-cols-3 gap-3">
+            <div className="sm:col-span-2 grid grid-cols-3 gap-3 min-w-0">
               <div>
                 <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
                   <Car className="size-4 text-accent" />
@@ -406,7 +406,7 @@ export default function AgentConsole() {
             </div>
           )}
 
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center justify-between mb-2">
               <label className="flex items-center gap-2 text-sm font-medium text-white/70">
                 <Gauge className="size-4 text-accent" />
@@ -439,7 +439,7 @@ export default function AgentConsole() {
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 min-w-0">
             <div className="flex items-center justify-between mb-2">
               <label className="flex items-center gap-2 text-sm font-medium text-white/70">
                 <FileText className="size-4 text-accent" />
@@ -550,7 +550,7 @@ export default function AgentConsole() {
             )}
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 min-w-0">
             <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
               <Gauge className="size-4 text-accent" />
               Driving conditions <span className="text-white/30 font-normal">(optional)</span>
@@ -564,7 +564,7 @@ export default function AgentConsole() {
             />
           </div>
 
-          <div>
+          <div className="min-w-0">
             <label className="flex items-center gap-2 text-sm font-medium text-white/70 mb-2">
               <MapPin className="size-4 text-accent" />
               ZIP / region <span className="text-white/30 font-normal">(optional)</span>
