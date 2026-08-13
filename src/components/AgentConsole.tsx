@@ -481,9 +481,9 @@ export default function AgentConsole() {
                       value={row.service}
                       onChange={(e) => updateQuoteRow(i, "service", e.target.value)}
                       placeholder={i === 0 ? "e.g. Transmission flush" : "Another service"}
-                      className="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
+                      className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
                     />
-                    <div className="relative w-28 shrink-0">
+                    <div className="relative w-20 sm:w-28 shrink-0">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 text-sm pointer-events-none">
                         $
                       </span>

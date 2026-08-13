@@ -82,7 +82,7 @@ export function FollowupChat({ findings }: { findings: Findings }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="e.g. Why is the transmission flush premature?"
-            className="flex-1 rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
+            className="flex-1 min-w-0 rounded-xl bg-white/5 border border-white/10 px-4 py-2.5 text-sm outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition placeholder:text-white/20"
           />
           <button
             type="submit"
