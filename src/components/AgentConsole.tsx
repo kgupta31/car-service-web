@@ -33,6 +33,7 @@ import { encodeFindings, decodeFindings } from "@/lib/share";
 import { VehicleIcon } from "@/components/VehicleIcon";
 import { FollowupChat } from "@/components/FollowupChat";
 import { PastAuditsList } from "@/components/PastAuditsList";
+import { Turnstile } from "@/components/Turnstile";
 import {
   vehicleIdentifier,
   historyIdentifier,
@@ -114,6 +115,7 @@ export default function AgentConsole() {
   const [isSharedView, setIsSharedView] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pastAudits, setPastAudits] = useState<AuditRecord[]>([]);
+  const [turnstileToken, setTurnstileToken] = useState("");
   const traceIdRef = useRef(0);
   const quoteImageInputRef = useRef<HTMLInputElement>(null);
 
@@ -224,6 +226,7 @@ export default function AgentConsole() {
                 quoteImage: effectiveQuoteImage,
                 zip: zip.trim(),
                 cachedSchedule,
+                turnstileToken,
               }
             : {
                 mode,
@@ -237,6 +240,7 @@ export default function AgentConsole() {
                 quoteImage: effectiveQuoteImage,
                 zip: zip.trim(),
                 cachedSchedule,
+                turnstileToken,
               }
         ),
       });
@@ -577,6 +581,8 @@ export default function AgentConsole() {
             />
           </div>
         </div>
+
+        <Turnstile onToken={setTurnstileToken} />
 
         <button
           type="submit"
