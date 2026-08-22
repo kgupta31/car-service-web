@@ -4,6 +4,7 @@ import type { ScheduleResult } from "@/lib/tools";
 import type { QuoteItemInput } from "@/lib/types";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { isTrustedOrigin } from "@/lib/originCheck";
+import { verifyTurnstile } from "@/lib/turnstile";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  const { limited, retryAfterSeconds } = checkRateLimit(ip);
+  const { limited, retryAfterSeconds } = await checkRateLimit(ip);
   if (limited) {
     return new Response(
       JSON.stringify({ error: "Too many requests. Please wait a bit before trying again." }),
@@ -114,6 +115,7 @@ export async function POST(req: NextRequest) {
     quoteImage,
     zip,
     cachedSchedule,
+    turnstileToken,
   } = body as {
     mode?: "vin" | "manual";
     vin?: string;
@@ -127,7 +129,15 @@ export async function POST(req: NextRequest) {
     quoteImage?: string;
     zip?: string;
     cachedSchedule?: ScheduleResult;
+    turnstileToken?: string;
   };
+
+  if (!(await verifyTurnstile(turnstileToken, ip))) {
+    return new Response(JSON.stringify({ error: "Verification failed. Please try again." }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   // Free-form otherwise — only used for display and a web-search prompt, so
   // reject anything that isn't zip-code-shaped rather than embedding
