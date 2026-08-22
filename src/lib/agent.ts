@@ -43,7 +43,10 @@ export function toUserFacingError(e: unknown, context: string): string {
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 // A current Groq-hosted model that supports tool calling. Check
 // https://console.groq.com/docs/tool-use if this gets deprecated.
-const MODEL = "llama-3.3-70b-versatile";
+// llama-3.3-70b-versatile was removed from Groq's lineup (404
+// model_not_found, confirmed live in production) — switched to
+// openai/gpt-oss-120b, confirmed via a live tool-calling test.
+const MODEL = "openai/gpt-oss-120b";
 // Vision-capable model, used only when the request includes a quote photo.
 // Same Groq account/key as MODEL, no new vendor. As of this writing,
 // llama-4-scout is not available on this account/region — qwen3.6-27b is
@@ -70,7 +73,9 @@ const PRICE_MODEL = "groq/compound-mini";
 // single biggest operational bottleneck this session. A lighter model is
 // the right fit; see the "Where a simpler model could help" section of
 // the architecture doc for the reasoning.
-const LIGHT_MODEL = "llama-3.1-8b-instant";
+// llama-3.1-8b-instant was removed from Groq's lineup alongside MODEL —
+// switched to openai/gpt-oss-20b, same family as MODEL, smaller/faster.
+const LIGHT_MODEL = "openai/gpt-oss-20b";
 
 const SYSTEM_PROMPT = `You are a car maintenance advisor agent. Your job is to protect the user
 from paying for services they don't yet need, while also flagging services that genuinely ARE
